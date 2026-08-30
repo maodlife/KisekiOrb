@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
-import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Upload, Users, X } from 'lucide-react';
+import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Upload, UserPlus, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
 import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveResult } from '@/lib/domain.ts';
 import { solveOrbment } from '@/lib/solver.ts';
@@ -132,6 +134,14 @@ export default function Home() {
 
   const patchCharacter = (updated: Character) => setGameData((current) => ({ ...current, characters: current.characters.map((item) => item.id === updated.id ? updated : item) }));
 
+  const addCharacter = (newCharacter: Character) => {
+    const levels = Object.fromEntries(newCharacter.slots.map((slot) => [String(slot.id), slot.currentLevel]));
+    setGameData((current) => ({ ...current, characters: [...current.characters, newCharacter] }));
+    setPlayer((current) => ({ ...current, slotLevels: { ...current.slotLevels, [newCharacter.id]: levels } }));
+    setCharacterId(newCharacter.id); setPolicies(makePolicies(newCharacter, { ...player, slotLevels: { ...player.slotLevels, [newCharacter.id]: levels } }));
+    setActiveSlot(newCharacter.slots[0].id); setSolveResult(null); setNotice(`已创建角色「${newCharacter.name}」，可以继续编辑槽位与线路。`);
+  };
+
   const exportAll = () => {
     const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), gameData, playerState: player }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'kiseki-orbment-backup.json'; anchor.click(); URL.revokeObjectURL(url); setNotice('已导出完整本地数据。');
@@ -196,7 +206,7 @@ export default function Home() {
       </>}
 
       {view === 'inventory' && <InventoryView gameData={gameData} player={player} search={inventorySearch} setSearch={setInventorySearch} updateResource={updateResource} setPlayer={setPlayer} />}
-      {view === 'characters' && <CharactersView gameData={gameData} character={character} player={player} switchCharacter={switchCharacter} updateSlotLevel={updateSlotLevel} patchCharacter={patchCharacter} />}
+      {view === 'characters' && <CharactersView gameData={gameData} character={character} player={player} switchCharacter={switchCharacter} updateSlotLevel={updateSlotLevel} patchCharacter={patchCharacter} addCharacter={addCharacter} />}
       {view === 'data' && <GameDataView gameData={gameData} setGameData={setGameData} setPlayer={setPlayer} exportAll={exportAll} importAll={importAll} resetAll={resetAll} />}
     </section>
     {notice && <output className="toast"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={14} /></button></output>}
@@ -231,11 +241,56 @@ function InventoryView({ gameData, player, search, setSearch, updateResource, se
   return <><div className="stats-row"><Metric value={totalOwned} label="已拥有回路" /><Metric value={Object.values(player.resources).filter((item) => item.shopAvailable).length} label="商店可购种类" /><Metric value={gameData.quartz.length} label="基础数据库" /></div><section className="panel data-panel"><div className="data-toolbar"><div className="search-box large"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索回路名称或系列" /></div><div><Button variant="outline" onClick={() => setAllShop(true)}>全部设为可购</Button><Button variant="ghost" onClick={() => setAllShop(false)}>清空商店</Button></div></div><Table className="resource-table"><TableHeader><TableRow><TableHead>回路</TableHead><TableHead>元素值</TableHead><TableHead>拥有</TableHead><TableHead>商店</TableHead><TableHead>价格</TableHead><TableHead>购买上限</TableHead></TableRow></TableHeader><TableBody>{shown.map((quartz) => { const resource = player.resources[quartz.id] ?? { quartzId: quartz.id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }; return <TableRow key={quartz.id}><TableCell><b>{quartz.name}</b><small className="cell-note">Lv{quartz.quartzLevel} · {quartz.family ?? '无系列'}</small></TableCell><TableCell><ElementSummary values={quartz.elements} /></TableCell><TableCell><Input className="number-input" type="number" min={0} value={resource.ownedCount} onChange={(event) => updateResource(quartz.id, { ownedCount: Math.max(0, Number(event.target.value)) })} aria-label={`${quartz.name}拥有数量`} /></TableCell><TableCell><button role="switch" aria-label={`${quartz.name}商店可购`} aria-checked={resource.shopAvailable} className={`switch-control ${resource.shopAvailable ? 'on' : ''}`} onClick={() => updateResource(quartz.id, { shopAvailable: !resource.shopAvailable })}><span /></button></TableCell><TableCell><Input aria-label={`${quartz.name}商店价格`} className="price-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPrice ?? ''} placeholder="未录入" onChange={(event) => updateResource(quartz.id, { shopPrice: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell><TableCell><Input aria-label={`${quartz.name}购买上限`} className="number-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPurchaseLimit ?? ''} placeholder="∞" onChange={(event) => updateResource(quartz.id, { shopPurchaseLimit: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell></TableRow>; })}</TableBody></Table></section></>;
 }
 
-function CharactersView({ gameData, character, player, switchCharacter, updateSlotLevel, patchCharacter }: { gameData: GameData; character: Character; player: PlayerState; switchCharacter: (id: string) => void; updateSlotLevel: (slotId: number, level: number) => void; patchCharacter: (character: Character) => void }) {
+function CharacterCreateDialog({ gameData, onCreate }: { gameData: GameData; onCreate: (character: Character) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [lineCount, setLineCount] = useState(3);
+  const [currentLevel, setCurrentLevel] = useState(1);
+  const [maxGameLevel, setMaxGameLevel] = useState(3);
+  const [error, setError] = useState('');
+
+  const resetForm = () => {
+    setName(''); setLineCount(3); setCurrentLevel(1); setMaxGameLevel(3); setError('');
+  };
+
+  const submit = (event: React.SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const cleanName = name.trim();
+    if (!cleanName) { setError('请输入角色名称。'); return; }
+    if (gameData.characters.some((item) => item.name.trim().toLowerCase() === cleanName.toLowerCase())) { setError('已经存在同名角色，请换一个名称。'); return; }
+    const id = `character_${Date.now().toString(36)}`;
+    onCreate(createCharacterTemplate({ id, name: cleanName, lineCount, currentLevel, maxGameLevel }));
+    setOpen(false); resetForm();
+  };
+
+  return <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (nextOpen) setError(''); }}>
+    <DialogTrigger render={<Button />}><UserPlus />新增角色</DialogTrigger>
+    <DialogContent className="character-create-dialog">
+      <DialogHeader>
+        <DialogTitle>创建角色导力器</DialogTitle>
+        <DialogDescription>自动建立 7 个物理槽位和基础线路；创建后可以继续调整属性限制与线路成员。</DialogDescription>
+      </DialogHeader>
+      <form className="character-create-form" onSubmit={submit}>
+        <label className="form-field form-field-wide" htmlFor="new-character-name"><span>角色名称</span><Input id="new-character-name" maxLength={30} value={name} onChange={(event) => { setName(event.target.value); setError(''); }} placeholder="例如：科洛丝" aria-invalid={Boolean(error)} /></label>
+        <label className="form-field" htmlFor="new-character-lines"><span>线路数量</span><NativeSelect id="new-character-lines" value={lineCount} onChange={(event) => setLineCount(Number(event.target.value))}>{[1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count} 条</option>)}</NativeSelect></label>
+        <label className="form-field" htmlFor="new-character-current-level"><span>槽位当前等级</span><NativeSelect id="new-character-current-level" value={currentLevel} onChange={(event) => { const level = Number(event.target.value); setCurrentLevel(level); setMaxGameLevel((current) => Math.max(current, level)); }}>{[1, 2, 3].map((level) => <option key={level} value={level}>Lv{level}</option>)}</NativeSelect></label>
+        <label className="form-field" htmlFor="new-character-max-level"><span>槽位最高等级</span><NativeSelect id="new-character-max-level" value={maxGameLevel} onChange={(event) => { const level = Number(event.target.value); setMaxGameLevel(level); setCurrentLevel((current) => Math.min(current, level)); }}>{[1, 2, 3].map((level) => <option key={level} value={level}>Lv{level}</option>)}</NativeSelect></label>
+        <div className="template-note"><CircleDot size={17} /><div><b>默认拓扑</b><span>Slot 1 为共享中心，其余 6 个槽位会平均分配到各条线路。</span></div></div>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <DialogFooter className="character-create-footer">
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>取消</Button>
+          <Button type="submit"><Plus />创建并编辑</Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>;
+}
+
+function CharactersView({ gameData, character, player, switchCharacter, updateSlotLevel, patchCharacter, addCharacter }: { gameData: GameData; character: Character; player: PlayerState; switchCharacter: (id: string) => void; updateSlotLevel: (slotId: number, level: number) => void; patchCharacter: (character: Character) => void; addCharacter: (character: Character) => void }) {
   const policies = makePolicies(character, player);
   const patchSlot = (slotId: number, patch: Partial<Character['slots'][number]>) => patchCharacter({ ...character, slots: character.slots.map((slot) => slot.id === slotId ? { ...slot, ...patch } : slot) });
   const toggleLineSlot = (lineId: string, slotId: number) => patchCharacter({ ...character, lines: character.lines.map((line) => line.id === lineId ? { ...line, slots: line.slots.includes(slotId) ? line.slots.filter((id) => id !== slotId) : [...line.slots, slotId] } : line) });
-  return <><div className="view-toolbar"><div><p className="step">正在编辑</p><NativeSelect value={character.id} onChange={(event) => switchCharacter(event.target.value)}>{gameData.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</NativeSelect></div><p>日常等级与静态导力器模板分开保存；线路直接引用物理槽位。</p></div><div className="character-grid"><section className="panel orbment-panel character-graph"><div className="panel-heading"><div><p className="step">导力器拓扑</p><h2>{character.name}</h2></div><span className="badge">{character.lines.length} 条线路</span></div><OrbmentGraph character={character} policies={policies} /><div className="legend"><span><i className="legend-dot shared" />被多条线路引用即为共享</span></div></section><section className="panel data-panel slots-panel"><p className="step">物理槽位</p><Table><TableHeader><TableRow><TableHead>槽位</TableHead><TableHead>当前等级</TableHead><TableHead>最高等级</TableHead><TableHead>属性限制</TableHead></TableRow></TableHeader><TableBody>{character.slots.map((slot) => <TableRow key={slot.id}><TableCell><b>Slot {slot.id + 1}</b></TableCell><TableCell><NativeSelect value={player.slotLevels[character.id]?.[String(slot.id)] ?? slot.currentLevel} onChange={(event) => updateSlotLevel(slot.id, Number(event.target.value))}>{Array.from({ length: slot.maxGameLevel }, (_, index) => <option key={index + 1} value={index + 1}>Lv{index + 1}</option>)}</NativeSelect></TableCell><TableCell><NativeSelect value={slot.maxGameLevel} onChange={(event) => patchSlot(slot.id, { maxGameLevel: Number(event.target.value) })}>{[1, 2, 3].map((level) => <option key={level} value={level}>Lv{level}</option>)}</NativeSelect></TableCell><TableCell><NativeSelect value={slot.restriction ?? ''} onChange={(event) => patchSlot(slot.id, { restriction: (event.target.value || null) as ElementKey | null })}><option value="">无限制</option>{ELEMENTS.map((element) => <option key={element} value={element}>{ELEMENT_LABELS[element]}属性</option>)}</NativeSelect></TableCell></TableRow>)}</TableBody></Table></section></div><section className="panel data-panel lines-editor"><div className="panel-heading"><div><p className="step">线路成员</p><h2>物理槽引用</h2></div><span className="helper">同一 Slot 可出现在任意多条 Line 中</span></div>{character.lines.map((line) => <div className="line-editor" key={line.id}><b>{line.name}</b><div>{character.slots.map((slot) => <button key={slot.id} className={line.slots.includes(slot.id) ? 'selected' : ''} onClick={() => toggleLineSlot(line.id, slot.id)}>Slot {slot.id + 1}</button>)}</div></div>)}</section></>;
+  return <><div className="view-toolbar"><div><p className="step">正在编辑</p><NativeSelect value={character.id} onChange={(event) => switchCharacter(event.target.value)}>{gameData.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</NativeSelect></div><p>日常等级与静态导力器模板分开保存；线路直接引用物理槽位。</p><CharacterCreateDialog gameData={gameData} onCreate={addCharacter} /></div><div className="character-grid"><section className="panel orbment-panel character-graph"><div className="panel-heading"><div><p className="step">导力器拓扑</p><h2>{character.name}</h2></div><span className="badge">{character.lines.length} 条线路</span></div><OrbmentGraph character={character} policies={policies} /><div className="legend"><span><i className="legend-dot shared" />被多条线路引用即为共享</span></div></section><section className="panel data-panel slots-panel"><p className="step">物理槽位</p><Table><TableHeader><TableRow><TableHead>槽位</TableHead><TableHead>当前等级</TableHead><TableHead>最高等级</TableHead><TableHead>属性限制</TableHead></TableRow></TableHeader><TableBody>{character.slots.map((slot) => <TableRow key={slot.id}><TableCell><b>Slot {slot.id + 1}</b></TableCell><TableCell><NativeSelect value={player.slotLevels[character.id]?.[String(slot.id)] ?? slot.currentLevel} onChange={(event) => updateSlotLevel(slot.id, Number(event.target.value))}>{Array.from({ length: slot.maxGameLevel }, (_, index) => <option key={index + 1} value={index + 1}>Lv{index + 1}</option>)}</NativeSelect></TableCell><TableCell><NativeSelect value={slot.maxGameLevel} onChange={(event) => patchSlot(slot.id, { maxGameLevel: Number(event.target.value) })}>{[1, 2, 3].map((level) => <option key={level} value={level}>Lv{level}</option>)}</NativeSelect></TableCell><TableCell><NativeSelect value={slot.restriction ?? ''} onChange={(event) => patchSlot(slot.id, { restriction: (event.target.value || null) as ElementKey | null })}><option value="">无限制</option>{ELEMENTS.map((element) => <option key={element} value={element}>{ELEMENT_LABELS[element]}属性</option>)}</NativeSelect></TableCell></TableRow>)}</TableBody></Table></section></div><section className="panel data-panel lines-editor"><div className="panel-heading"><div><p className="step">线路成员</p><h2>物理槽引用</h2></div><span className="helper">同一 Slot 可出现在任意多条 Line 中</span></div>{character.lines.map((line) => <div className="line-editor" key={line.id}><b>{line.name}</b><div>{character.slots.map((slot) => <button key={slot.id} className={line.slots.includes(slot.id) ? 'selected' : ''} onClick={() => toggleLineSlot(line.id, slot.id)}>Slot {slot.id + 1}</button>)}</div></div>)}</section></>;
 }
 
 function GameDataView({ gameData, setGameData, setPlayer, exportAll, importAll, resetAll }: { gameData: GameData; setGameData: React.Dispatch<React.SetStateAction<GameData>>; setPlayer: React.Dispatch<React.SetStateAction<PlayerState>>; exportAll: () => void; importAll: (event: ChangeEvent<HTMLInputElement>) => void; resetAll: () => void }) {
