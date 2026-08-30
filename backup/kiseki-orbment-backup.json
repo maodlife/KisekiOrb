@@ -1,0 +1,917 @@
+{
+  "exportedAt": "2026-08-30T12:10:25.438Z",
+  "gameData": {
+    "version": "sample-0.2",
+    "characters": [
+      {
+        "id": "estelle",
+        "name": "艾丝蒂尔",
+        "slots": [
+          {
+            "id": 0,
+            "x": 50,
+            "y": 50,
+            "currentLevel": 2,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 1,
+            "x": 50,
+            "y": 10,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 2,
+            "x": 14,
+            "y": 32,
+            "currentLevel": 2,
+            "maxGameLevel": 3,
+            "restriction": "earth"
+          },
+          {
+            "id": 3,
+            "x": 86,
+            "y": 32,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 4,
+            "x": 50,
+            "y": 88,
+            "currentLevel": 2,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 5,
+            "x": 18,
+            "y": 76,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 6,
+            "x": 82,
+            "y": 76,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          }
+        ],
+        "lines": [
+          {
+            "id": "L1",
+            "name": "Line 1",
+            "slots": [
+              0,
+              1,
+              2
+            ]
+          },
+          {
+            "id": "L2",
+            "name": "Line 2",
+            "slots": [
+              0,
+              3
+            ]
+          },
+          {
+            "id": "L3",
+            "name": "Line 3",
+            "slots": [
+              0,
+              4,
+              5
+            ]
+          },
+          {
+            "id": "L4",
+            "name": "Line 4",
+            "slots": [
+              0,
+              4,
+              6
+            ]
+          }
+        ]
+      },
+      {
+        "id": "joshua",
+        "name": "约修亚",
+        "slots": [
+          {
+            "id": 0,
+            "x": 50,
+            "y": 50,
+            "currentLevel": 2,
+            "maxGameLevel": 3,
+            "restriction": "time"
+          },
+          {
+            "id": 1,
+            "x": 50,
+            "y": 9,
+            "currentLevel": 2,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 2,
+            "x": 18,
+            "y": 27,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 3,
+            "x": 82,
+            "y": 27,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 4,
+            "x": 50,
+            "y": 91,
+            "currentLevel": 2,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 5,
+            "x": 18,
+            "y": 73,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          },
+          {
+            "id": 6,
+            "x": 82,
+            "y": 73,
+            "currentLevel": 1,
+            "maxGameLevel": 3,
+            "restriction": null
+          }
+        ],
+        "lines": [
+          {
+            "id": "L1",
+            "name": "Line 1",
+            "slots": [
+              0,
+              1,
+              2,
+              5
+            ]
+          },
+          {
+            "id": "L2",
+            "name": "Line 2",
+            "slots": [
+              0,
+              3,
+              6
+            ]
+          },
+          {
+            "id": "L3",
+            "name": "Line 3",
+            "slots": [
+              0,
+              4
+            ]
+          }
+        ]
+      },
+      {
+        "id": "character_mtfq9ank",
+        "name": "亚妮拉丝",
+        "slots": [
+          {
+            "id": 0,
+            "x": 50,
+            "y": 50,
+            "currentLevel": 1,
+            "maxGameLevel": 2,
+            "restriction": "wind"
+          },
+          {
+            "id": 1,
+            "x": 50,
+            "y": 9,
+            "currentLevel": 1,
+            "maxGameLevel": 2,
+            "restriction": null
+          },
+          {
+            "id": 2,
+            "x": 18,
+            "y": 28,
+            "currentLevel": 1,
+            "maxGameLevel": 2,
+            "restriction": null
+          },
+          {
+            "id": 3,
+            "x": 82,
+            "y": 28,
+            "currentLevel": 1,
+            "maxGameLevel": 2,
+            "restriction": null
+          },
+          {
+            "id": 4,
+            "x": 50,
+            "y": 91,
+            "currentLevel": 1,
+            "maxGameLevel": 2,
+            "restriction": null
+          },
+          {
+            "id": 5,
+            "x": 18,
+            "y": 72,
+            "currentLevel": 1,
+            "maxGameLevel": 2,
+            "restriction": null
+          },
+          {
+            "id": 6,
+            "x": 82,
+            "y": 72,
+            "currentLevel": 1,
+            "maxGameLevel": 2,
+            "restriction": "wind"
+          }
+        ],
+        "lines": [
+          {
+            "id": "L1",
+            "name": "Line 1",
+            "slots": [
+              0,
+              5
+            ]
+          },
+          {
+            "id": "L2",
+            "name": "Line 2",
+            "slots": [
+              0,
+              2,
+              1
+            ]
+          },
+          {
+            "id": "L3",
+            "name": "Line 3",
+            "slots": [
+              0,
+              3,
+              6,
+              4
+            ]
+          }
+        ]
+      }
+    ],
+    "quartz": [
+      {
+        "id": "defense_1",
+        "name": "防御1",
+        "family": "defense",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 1,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "defense_2",
+        "name": "破坏1",
+        "family": "defense",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 1,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "mind_1",
+        "name": "精神1",
+        "family": "mind",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 1,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {
+          "ats": 3
+        },
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "mind_2",
+        "name": "HP1",
+        "family": "mind",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 1,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {
+          "ats": 6
+        },
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "action_1",
+        "name": "魔防1",
+        "family": "action",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 1,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {
+          "spd": 2
+        },
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "action_2",
+        "name": "回避1",
+        "family": "action",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 1,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {
+          "spd": 4
+        },
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "attack_1",
+        "name": "攻击1",
+        "family": "attack",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 1,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "attack_2",
+        "name": "必杀1",
+        "family": "attack",
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 1,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false,
+        "series": "fire"
+      },
+      {
+        "id": "quartz_1788091432548",
+        "name": "行动力1",
+        "series": "time",
+        "family": null,
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 1,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "quartz_1788091473551",
+        "name": "驱动1",
+        "series": "time",
+        "family": null,
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 1,
+          "space": 0,
+          "mirage": 1
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "quartz_1788091492182",
+        "name": "命中1",
+        "series": "space",
+        "family": null,
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 1,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "quartz_1788091503553",
+        "name": "省EP1",
+        "series": "space",
+        "family": null,
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 1,
+          "mirage": 1
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "quartz_1788091525683",
+        "name": "妨碍1",
+        "series": "mirage",
+        "family": null,
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 1
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "quartz_1788091535870",
+        "name": "EP1",
+        "series": "mirage",
+        "family": null,
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 1,
+          "mirage": 1
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "quartz_1788091589717",
+        "name": "熏风",
+        "series": "wind",
+        "family": null,
+        "quartzLevel": 1,
+        "elements": {
+          "earth": 0,
+          "water": 3,
+          "fire": 0,
+          "wind": 3,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      },
+      {
+        "id": "quartz_1788091625034",
+        "name": "慧眼",
+        "series": "space",
+        "family": null,
+        "quartzLevel": 2,
+        "elements": {
+          "earth": 0,
+          "water": 2,
+          "fire": 0,
+          "wind": 2,
+          "time": 0,
+          "space": 2,
+          "mirage": 0
+        },
+        "stats": {},
+        "tags": [],
+        "uniqueEquip": false
+      }
+    ],
+    "arts": [
+      {
+        "id": "tear",
+        "name": "回复术",
+        "requirements": {
+          "earth": 0,
+          "water": 2,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "category": "回复",
+        "epCost": 10
+      },
+      {
+        "id": "tearal",
+        "name": "中回复术",
+        "requirements": {
+          "earth": 0,
+          "water": 4,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "category": "回复",
+        "epCost": 20
+      },
+      {
+        "id": "la_tearial",
+        "name": "回复术 · 复",
+        "requirements": {
+          "earth": 0,
+          "water": 6,
+          "fire": 0,
+          "wind": 2,
+          "time": 0,
+          "space": 2,
+          "mirage": 0
+        },
+        "category": "回复",
+        "epCost": 40
+      },
+      {
+        "id": "fire_bolt",
+        "name": "火之矢",
+        "requirements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 3,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "category": "攻击",
+        "epCost": 10
+      },
+      {
+        "id": "aerial",
+        "name": "风之领域",
+        "requirements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 4,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "category": "攻击",
+        "epCost": 25
+      },
+      {
+        "id": "clock_up",
+        "name": "时间加速",
+        "requirements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 4,
+          "space": 0,
+          "mirage": 0
+        },
+        "category": "辅助",
+        "epCost": 20
+      },
+      {
+        "id": "earth_guard",
+        "name": "大地之障",
+        "requirements": {
+          "earth": 4,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 0,
+          "mirage": 0
+        },
+        "category": "辅助",
+        "epCost": 20
+      },
+      {
+        "id": "soul_blur",
+        "name": "灵魂模糊",
+        "requirements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 4,
+          "space": 0,
+          "mirage": 2
+        },
+        "category": "攻击",
+        "epCost": 30
+      },
+      {
+        "id": "silver_thorn",
+        "name": "银色荆棘",
+        "requirements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 0,
+          "time": 0,
+          "space": 4,
+          "mirage": 4
+        },
+        "category": "攻击",
+        "epCost": 45
+      },
+      {
+        "id": "zodiac",
+        "name": "星杯领域",
+        "requirements": {
+          "earth": 0,
+          "water": 3,
+          "fire": 0,
+          "wind": 2,
+          "time": 0,
+          "space": 3,
+          "mirage": 5
+        },
+        "category": "辅助",
+        "epCost": 60
+      },
+      {
+        "id": "art_1788091681585",
+        "name": "狂怒风暴",
+        "requirements": {
+          "earth": 0,
+          "water": 0,
+          "fire": 0,
+          "wind": 4,
+          "time": 2,
+          "space": 0,
+          "mirage": 2
+        },
+        "epCost": 3600,
+        "category": "攻击"
+      }
+    ]
+  },
+  "playerState": {
+    "version": "player-0.1",
+    "resources": {
+      "defense_1": {
+        "quartzId": "defense_1",
+        "ownedCount": 1,
+        "shopAvailable": true,
+        "shopPrice": 500,
+        "shopPurchaseLimit": null
+      },
+      "defense_2": {
+        "quartzId": "defense_2",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": 1100,
+        "shopPurchaseLimit": null
+      },
+      "mind_1": {
+        "quartzId": "mind_1",
+        "ownedCount": 1,
+        "shopAvailable": true,
+        "shopPrice": 600,
+        "shopPurchaseLimit": null
+      },
+      "mind_2": {
+        "quartzId": "mind_2",
+        "ownedCount": 1,
+        "shopAvailable": true,
+        "shopPrice": 1300,
+        "shopPurchaseLimit": null
+      },
+      "action_1": {
+        "quartzId": "action_1",
+        "ownedCount": 1,
+        "shopAvailable": true,
+        "shopPrice": 700,
+        "shopPurchaseLimit": null
+      },
+      "action_2": {
+        "quartzId": "action_2",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": 1500,
+        "shopPurchaseLimit": null
+      },
+      "attack_1": {
+        "quartzId": "attack_1",
+        "ownedCount": 1,
+        "shopAvailable": true,
+        "shopPrice": 550,
+        "shopPurchaseLimit": null
+      },
+      "attack_2": {
+        "quartzId": "attack_2",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": 1200,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091432548": {
+        "quartzId": "quartz_1788091432548",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091473551": {
+        "quartzId": "quartz_1788091473551",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091492182": {
+        "quartzId": "quartz_1788091492182",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091503553": {
+        "quartzId": "quartz_1788091503553",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091525683": {
+        "quartzId": "quartz_1788091525683",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091535870": {
+        "quartzId": "quartz_1788091535870",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091589717": {
+        "quartzId": "quartz_1788091589717",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      },
+      "quartz_1788091625034": {
+        "quartzId": "quartz_1788091625034",
+        "ownedCount": 0,
+        "shopAvailable": true,
+        "shopPrice": null,
+        "shopPurchaseLimit": null
+      }
+    },
+    "slotLevels": {
+      "estelle": {
+        "0": 2,
+        "1": 1,
+        "2": 2,
+        "3": 1,
+        "4": 2,
+        "5": 1,
+        "6": 1
+      },
+      "joshua": {
+        "0": 2,
+        "1": 2,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 1,
+        "6": 1
+      },
+      "character_mtfq9ank": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1
+      }
+    },
+    "lastSolver": {
+      "characterId": "character_mtfq9ank",
+      "resourceMode": "owned_plus_shop",
+      "mustHaveArts": [
+        "art_1788091681585"
+      ],
+      "rankingPreset": "resource"
+    }
+  }
+}
