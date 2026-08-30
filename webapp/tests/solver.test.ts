@@ -64,9 +64,24 @@ test('owned quantity prevents duplicate use', () => {
 
 test('shop mode creates the correct purchase count', () => {
   const character = request().character; character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }];
-  const result = solveOrbment(request({ character, quartz: [q('water', { water: 2 })], arts: [art('tear', { water: 4 })], owned: { water: 1 }, shop: ['water'], mode: 'owned_plus_shop' }));
+  const result = solveOrbment(request({ character, quartz: [q('water-owned', { water: 2 }), q('water-shop', { water: 2 })], arts: [art('tear', { water: 4 })], owned: { 'water-owned': 1, 'water-shop': 0 }, shop: ['water-shop'], mode: 'owned_plus_shop' }));
   assert.equal(result.status, 'solved');
-  assert.equal(result.builds[0].purchases.water, 1);
+  assert.equal(result.builds[0].purchases['water-shop'], 1);
+});
+
+test('quartz with the same display name cannot be equipped more than once', () => {
+  const character = request().character; character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }];
+  const first = q('cast-original', { time: 2 });
+  const second = q('cast-copy', { time: 2 });
+  first.name = '驱动1'; second.name = ' 驱动１ ';
+  const result = solveOrbment(request({ character, quartz: [first, second], arts: [art('clock', { time: 4 })], owned: { 'cast-original': 1, 'cast-copy': 1 } }));
+  assert.equal(result.status, 'no_solution');
+});
+
+test('shop availability never makes one named quartz repeatable', () => {
+  const character = request().character; character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }];
+  const result = solveOrbment(request({ character, quartz: [q('cast1', { time: 2 })], arts: [art('clock', { time: 4 })], owned: { cast1: 0 }, shop: ['cast1'], mode: 'owned_plus_shop' }));
+  assert.equal(result.status, 'no_solution');
 });
 
 test('owned-only mode never buys quartz', () => {

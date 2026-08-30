@@ -12,6 +12,10 @@ import {
 
 type Candidate = Quartz | null;
 
+function equipNameKey(quartz: Quartz) {
+  return quartz.name.trim().normalize('NFKC').toLocaleLowerCase('zh-CN') || quartz.id;
+}
+
 function satisfies(total: ElementValues, requirement: ElementValues) {
   return ELEMENTS.every((element) => total[element] >= requirement[element]);
 }
@@ -61,6 +65,7 @@ function buildFromAssignment(request: SolveRequest, assignments: Record<number, 
   let upgradedSlotCount = 0;
   let ats = 0;
   let spd = 0;
+  const equippedNames = new Set<string>();
   for (const slot of request.character.slots) {
     const quartzId = assignments[slot.id];
     const quartz = quartzId ? quartzById.get(quartzId)! : null;
@@ -72,6 +77,9 @@ function buildFromAssignment(request: SolveRequest, assignments: Record<number, 
       upgradeSteps += finalLevel - policy.currentLevel;
     }
     if (quartz) {
+      const nameKey = equipNameKey(quartz);
+      if (equippedNames.has(nameKey)) return null;
+      equippedNames.add(nameKey);
       usage[quartz.id] = (usage[quartz.id] ?? 0) + 1;
       ats += quartz.stats.ats ?? 0;
       spd += quartz.stats.spd ?? 0;
@@ -159,6 +167,7 @@ export function solveOrbment(request: SolveRequest): SolveResult {
   const assignments: Record<number, string | null> = Object.fromEntries(request.character.slots.map((slot) => [slot.id, null]));
   const assigned = new Set<number>();
   const usage: Record<string, number> = {};
+  const usedNames = new Set<string>();
   const usedFamilies = new Set<string>();
   const builds: Build[] = [];
   const signatures = new Set<string>();
@@ -201,12 +210,15 @@ export function solveOrbment(request: SolveRequest): SolveResult {
     for (const candidate of candidates[slot.id]) {
       if (nodesVisited >= maxNodes) { truncated = true; break; }
       if (candidate) {
+        const nameKey = equipNameKey(candidate);
+        if (usedNames.has(nameKey)) continue;
         if ((usage[candidate.id] ?? 0) >= availableCount(request, candidate.id)) continue;
         if (candidate.uniqueEquip && (usage[candidate.id] ?? 0) > 0) continue;
         if (candidate.family && usedFamilies.has(candidate.family)) continue;
         if (candidate.quartzLevel > policy.currentLevel && (!policy.allowUpgrade || candidate.quartzLevel > policy.maxLevel)) continue;
         assignments[slot.id] = candidate.id;
         usage[candidate.id] = (usage[candidate.id] ?? 0) + 1;
+        usedNames.add(nameKey);
         if (candidate.family) usedFamilies.add(candidate.family);
       } else assignments[slot.id] = null;
       assigned.add(slot.id);
@@ -215,6 +227,7 @@ export function solveOrbment(request: SolveRequest): SolveResult {
       if (candidate) {
         usage[candidate.id] -= 1;
         if (usage[candidate.id] === 0) delete usage[candidate.id];
+        usedNames.delete(equipNameKey(candidate));
         if (candidate.family) usedFamilies.delete(candidate.family);
       }
       assignments[slot.id] = null;
