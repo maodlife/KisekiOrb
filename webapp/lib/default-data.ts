@@ -1,12 +1,14 @@
-import { emptyElements, type Art, type Character, type ElementKey, type GameData, type PlayerState, type Quartz } from './domain.ts';
+import { ELEMENTS, emptyElements, type Art, type Character, type ElementKey, type GameData, type PlayerState, type Quartz } from './domain.ts';
 
 function elements(values: Partial<Record<ElementKey, number>>) {
   return { ...emptyElements(), ...values };
 }
 
-const quartz = (id: string, name: string, family: string | null, quartzLevel: number, values: Partial<Record<ElementKey, number>>, stats: Record<string, number> = {}, uniqueEquip = false): Quartz => ({
-  id, name, family, quartzLevel, elements: elements(values), stats, tags: [], uniqueEquip,
-});
+const quartz = (id: string, name: string, family: string | null, quartzLevel: number, values: Partial<Record<ElementKey, number>>, stats: Record<string, number> = {}, uniqueEquip = false): Quartz => {
+  const elementValues = elements(values);
+  const series = ELEMENTS.reduce((best, element) => elementValues[element] > elementValues[best] ? element : best, ELEMENTS[0]);
+  return { id, name, series, family, quartzLevel, elements: elementValues, stats, tags: [], uniqueEquip };
+};
 
 const art = (id: string, name: string, requirements: Partial<Record<ElementKey, number>>, category: string, epCost: number): Art => ({
   id, name, requirements: elements(requirements), category, epCost,

@@ -22,6 +22,7 @@ export type Character = { id: string; name: string; slots: Slot[]; lines: Line[]
 export type Quartz = {
   id: string;
   name: string;
+  series?: ElementKey;
   family: string | null;
   quartzLevel: number;
   elements: ElementValues;

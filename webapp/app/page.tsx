@@ -1,15 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
-import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Upload, UserPlus, Users, X } from 'lucide-react';
+import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
 import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveResult } from '@/lib/domain.ts';
+import { compareQuartzBySeriesLevelName, getQuartzSeries } from '@/lib/quartz-series.ts';
 import { solveOrbment } from '@/lib/solver.ts';
 import { loadGameData, loadPlayerState, resetLocalData, saveGameData, savePlayerState } from '@/lib/storage.ts';
 
@@ -294,12 +297,51 @@ function CharactersView({ gameData, character, player, switchCharacter, updateSl
 }
 
 function GameDataView({ gameData, setGameData, setPlayer, exportAll, importAll, resetAll }: { gameData: GameData; setGameData: React.Dispatch<React.SetStateAction<GameData>>; setPlayer: React.Dispatch<React.SetStateAction<PlayerState>>; exportAll: () => void; importAll: (event: ChangeEvent<HTMLInputElement>) => void; resetAll: () => void }) {
+  const [pendingDelete, setPendingDelete] = useState<GameData['quartz'][number] | null>(null);
   const patchQuartz = (id: string, patch: Partial<GameData['quartz'][number]>) => setGameData((current) => ({ ...current, quartz: current.quartz.map((item) => item.id === id ? { ...item, ...patch } : item) }));
   const patchArt = (id: string, patch: Partial<GameData['arts'][number]>) => setGameData((current) => ({ ...current, arts: current.arts.map((item) => item.id === id ? { ...item, ...patch } : item) }));
+  const sortedQuartz = useMemo(() => [...gameData.quartz].sort(compareQuartzBySeriesLevelName), [gameData.quartz]);
   const addQuartz = () => {
-    const id = `quartz_${Date.now()}`; const item = { id, name: '新回路', family: null, quartzLevel: 1, elements: emptyElements(), stats: {}, tags: [], uniqueEquip: false };
+    const id = `quartz_${Date.now()}`; const item = { id, name: '新回路', series: 'earth' as const, family: null, quartzLevel: 1, elements: emptyElements(), stats: {}, tags: [], uniqueEquip: false };
     setGameData((current) => ({ ...current, quartz: [...current.quartz, item] })); setPlayer((current) => ({ ...current, resources: { ...current.resources, [id]: { quartzId: id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null } } }));
   };
+  const deleteQuartz = () => {
+    if (!pendingDelete) return;
+    const id = pendingDelete.id;
+    setGameData((current) => ({ ...current, quartz: current.quartz.filter((item) => item.id !== id) }));
+    setPlayer((current) => {
+      const resources = { ...current.resources };
+      delete resources[id];
+      return { ...current, resources };
+    });
+    setPendingDelete(null);
+  };
   const addArt = () => setGameData((current) => ({ ...current, arts: [...current.arts, { id: `art_${Date.now()}`, name: '新魔法', requirements: emptyElements(), epCost: 0, category: '未分类' }] }));
-  return <><section className="panel backup-panel"><div><span className="backup-icon"><Database size={20} /></span><div><p className="step">本地数据安全</p><h2>基础数据与玩家状态分开存储</h2><p>备份文件会同时包含两类数据，导入时不会依赖网络。</p></div></div><div className="backup-actions"><Button onClick={exportAll}><Download />导出 JSON</Button><label className="button-label"><Upload size={15} />导入 JSON<input type="file" accept="application/json" onChange={importAll} /></label><Button variant="destructive" onClick={resetAll}><RotateCcw />恢复示例</Button></div></section><div className="stats-row"><Metric value={gameData.characters.length} label="角色" /><Metric value={gameData.quartz.length} label="回路定义" /><Metric value={gameData.arts.length} label="魔法定义" /><Metric value={gameData.version} label="数据版本" /></div><section className="panel data-panel"><div className="panel-heading"><div><p className="step">回路数据库</p><h2>Quartz 定义</h2></div><Button onClick={addQuartz}><Plus />添加回路</Button></div><Table className="edit-table"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>等级</TableHead><TableHead>系列</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}</TableRow></TableHeader><TableBody>{gameData.quartz.map((quartz) => <TableRow key={quartz.id}><TableCell><Input value={quartz.name} onChange={(event) => patchQuartz(quartz.id, { name: event.target.value })} /><small className="cell-note">{quartz.id}</small></TableCell><TableCell><Input className="tiny-input" type="number" min={1} max={3} value={quartz.quartzLevel} onChange={(event) => patchQuartz(quartz.id, { quartzLevel: Number(event.target.value) })} /></TableCell><TableCell><Input value={quartz.family ?? ''} placeholder="无" onChange={(event) => patchQuartz(quartz.id, { family: event.target.value || null })} /></TableCell>{ELEMENTS.map((element) => <TableCell key={element}><Input className="tiny-input" type="number" min={0} value={quartz.elements[element]} onChange={(event) => patchQuartz(quartz.id, { elements: { ...quartz.elements, [element]: Math.max(0, Number(event.target.value)) } })} /></TableCell>)}</TableRow>)}</TableBody></Table></section><section className="panel data-panel"><div className="panel-heading"><div><p className="step">魔法数据库</p><h2>Arts 条件</h2></div><Button onClick={addArt}><Plus />添加魔法</Button></div><Table className="edit-table"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>EP</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}</TableRow></TableHeader><TableBody>{gameData.arts.map((art) => <TableRow key={art.id}><TableCell><Input value={art.name} onChange={(event) => patchArt(art.id, { name: event.target.value })} /><small className="cell-note">{art.id}</small></TableCell><TableCell><Input value={art.category} onChange={(event) => patchArt(art.id, { category: event.target.value })} /></TableCell><TableCell><Input className="tiny-input" type="number" min={0} value={art.epCost} onChange={(event) => patchArt(art.id, { epCost: Number(event.target.value) })} /></TableCell>{ELEMENTS.map((element) => <TableCell key={element}><Input className="tiny-input" type="number" min={0} value={art.requirements[element]} onChange={(event) => patchArt(art.id, { requirements: { ...art.requirements, [element]: Math.max(0, Number(event.target.value)) } })} /></TableCell>)}</TableRow>)}</TableBody></Table></section></>;
+  return <>
+    <section className="panel backup-panel"><div><span className="backup-icon"><Database size={20} /></span><div><p className="step">本地数据安全</p><h2>基础数据与玩家状态分开存储</h2><p>备份文件会同时包含两类数据，导入时不会依赖网络。</p></div></div><div className="backup-actions"><Button onClick={exportAll}><Download />导出 JSON</Button><label className="button-label"><Upload size={15} />导入 JSON<input type="file" accept="application/json" onChange={importAll} /></label><Button variant="destructive" onClick={resetAll}><RotateCcw />恢复示例</Button></div></section>
+    <div className="stats-row"><Metric value={gameData.characters.length} label="角色" /><Metric value={gameData.quartz.length} label="回路定义" /><Metric value={gameData.arts.length} label="魔法定义" /><Metric value={gameData.version} label="数据版本" /></div>
+    <section className="panel data-panel">
+      <div className="panel-heading"><div><p className="step">回路数据库</p><h2>Quartz 定义</h2></div><Button onClick={addQuartz}><Plus />添加回路</Button></div>
+      <Table className="edit-table quartz-edit-table">
+        <TableHeader><TableRow><TableHead>名称</TableHead><TableHead>系列</TableHead><TableHead>等级</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}<TableHead><span className="sr-only">操作</span></TableHead></TableRow></TableHeader>
+        <TableBody>{sortedQuartz.map((quartz) => <TableRow key={quartz.id}>
+          <TableCell><Input value={quartz.name} onChange={(event) => patchQuartz(quartz.id, { name: event.target.value })} /><small className="cell-note">{quartz.id}</small></TableCell>
+          <TableCell><RadioGroup className="series-radio" value={getQuartzSeries(quartz)} onValueChange={(value) => patchQuartz(quartz.id, { series: value as ElementKey })} aria-label={`${quartz.name}系列`}>{ELEMENTS.map((element) => <div className={`series-radio-option series-${element}`} key={element} title={`${ELEMENT_LABELS[element]}系列`}><RadioGroupItem value={element} aria-label={`${ELEMENT_LABELS[element]}系列`} /><span aria-hidden="true">{ELEMENT_LABELS[element]}</span></div>)}</RadioGroup></TableCell>
+          <TableCell><Input className="tiny-input" type="number" min={1} max={3} value={quartz.quartzLevel} onChange={(event) => patchQuartz(quartz.id, { quartzLevel: Number(event.target.value) })} /></TableCell>
+          {ELEMENTS.map((element) => <TableCell key={element}><Input className={`tiny-input element-number ${quartz.elements[element] === 0 ? 'zero-value' : ''}`} type="number" min={0} value={quartz.elements[element]} onChange={(event) => patchQuartz(quartz.id, { elements: { ...quartz.elements, [element]: Math.max(0, Number(event.target.value)) } })} /></TableCell>)}
+          <TableCell><Button className="row-delete-button" variant="ghost" size="icon-sm" onClick={() => setPendingDelete(quartz)} aria-label={`删除回路${quartz.name}`} title={`删除${quartz.name}`}><Trash2 /><span className="sr-only">删除</span></Button></TableCell>
+        </TableRow>)}</TableBody>
+      </Table>
+    </section>
+    <section className="panel data-panel">
+      <div className="panel-heading"><div><p className="step">魔法数据库</p><h2>Arts 条件</h2></div><Button onClick={addArt}><Plus />添加魔法</Button></div>
+      <Table className="edit-table"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>EP</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}</TableRow></TableHeader><TableBody>{gameData.arts.map((art) => <TableRow key={art.id}><TableCell><Input value={art.name} onChange={(event) => patchArt(art.id, { name: event.target.value })} /><small className="cell-note">{art.id}</small></TableCell><TableCell><Input value={art.category} onChange={(event) => patchArt(art.id, { category: event.target.value })} /></TableCell><TableCell><Input className="tiny-input" type="number" min={0} value={art.epCost} onChange={(event) => patchArt(art.id, { epCost: Number(event.target.value) })} /></TableCell>{ELEMENTS.map((element) => <TableCell key={element}><Input className={`tiny-input element-number ${art.requirements[element] === 0 ? 'zero-value' : ''}`} type="number" min={0} value={art.requirements[element]} onChange={(event) => patchArt(art.id, { requirements: { ...art.requirements, [element]: Math.max(0, Number(event.target.value)) } })} /></TableCell>)}</TableRow>)}</TableBody></Table>
+    </section>
+    <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(nextOpen) => { if (!nextOpen) setPendingDelete(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>删除回路“{pendingDelete?.name}”？</AlertDialogTitle><AlertDialogDescription>这会同时删除该回路的库存与商店记录，操作会自动保存在本机。</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={deleteQuartz}><Trash2 />确认删除</AlertDialogAction></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>;
 }
