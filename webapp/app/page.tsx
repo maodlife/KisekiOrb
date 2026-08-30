@@ -169,7 +169,7 @@ export default function Home() {
 
   return <main className="app-shell">
     <aside className="sidebar">
-      <button className="brand" onClick={() => setView('solver')}><span className="brand-orb"><Sparkles size={17} /></span><span>Orbment</span></button>
+      <button className="brand" onClick={() => setView('solver')}><span className="brand-orb"><Sparkles size={17} /></span><span>KisekiOrb</span></button>
       <nav aria-label="主导航">
         <button className={`nav-item ${view === 'solver' ? 'active' : ''}`} onClick={() => setView('solver')}><CircleDot size={18} /><span>求解器</span></button>
         <button className={`nav-item ${view === 'inventory' ? 'active' : ''}`} onClick={() => setView('inventory')}><Gem size={18} /><span>库存与商店</span></button>
