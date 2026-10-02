@@ -16,7 +16,7 @@ export type Slot = {
   notes?: string;
 };
 
-export type Line = { id: string; name: string; slots: number[] };
+export type Line = { id: string; name: string; slots: number[]; edges?: [number, number][] };
 export type Character = { id: string; name: string; slots: Slot[]; lines: Line[] };
 
 export type Quartz = {
@@ -24,20 +24,24 @@ export type Quartz = {
   name: string;
   series?: ElementKey;
   family: string | null;
-  quartzLevel: number;
+  quartzLevel: number | null;
   elements: ElementValues;
   stats: Record<string, number>;
   tags: string[];
-  uniqueEquip: boolean;
+  uniqueEquip: boolean | null;
   notes?: string;
 };
 
 export type Art = {
   id: string;
   name: string;
+  series?: ElementKey;
   requirements: ElementValues;
   epCost: number;
   category: string;
+  power?: string | null;
+  range?: string;
+  effects?: string[];
   notes?: string;
 };
 

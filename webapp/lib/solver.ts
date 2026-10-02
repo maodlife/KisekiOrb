@@ -1,3 +1,4 @@
+import { getQuartzSeries } from './quartz-series.ts';
 import {
   ELEMENTS,
   emptyElements,
@@ -11,6 +12,10 @@ import {
 } from './domain.ts';
 
 type Candidate = Quartz | null;
+
+function requiredQuartzLevel(quartz: Quartz) {
+  return quartz.quartzLevel ?? 1;
+}
 
 function equipNameKey(quartz: Quartz) {
   return quartz.name.trim().normalize('NFKC').toLocaleLowerCase('zh-CN') || quartz.id;
@@ -70,7 +75,7 @@ function buildFromAssignment(request: SolveRequest, assignments: Record<number, 
     const quartzId = assignments[slot.id];
     const quartz = quartzId ? quartzById.get(quartzId)! : null;
     const policy = request.slotPolicies[slot.id];
-    const finalLevel = quartz ? Math.max(policy.currentLevel, quartz.quartzLevel) : policy.currentLevel;
+    const finalLevel = quartz ? Math.max(policy.currentLevel, requiredQuartzLevel(quartz)) : policy.currentLevel;
     slotFinalLevels[slot.id] = finalLevel;
     if (finalLevel > policy.currentLevel) {
       upgradedSlotCount += 1;
@@ -141,15 +146,15 @@ export function solveOrbment(request: SolveRequest): SolveResult {
     const policy = request.slotPolicies[slot.id];
     const allowedLevel = policy.allowUpgrade ? policy.maxLevel : policy.currentLevel;
     const list = request.quartz.filter((quartz) => {
-      if (availableCount(request, quartz.id) <= 0 || quartz.quartzLevel > allowedLevel) return false;
-      if (slot.restriction && quartz.elements[slot.restriction] <= 0) return false;
+      if (availableCount(request, quartz.id) <= 0 || requiredQuartzLevel(quartz) > allowedLevel) return false;
+      if (slot.restriction && getQuartzSeries(quartz) !== slot.restriction) return false;
       return true;
     });
     list.sort((a, b) => {
       const aScore = ELEMENTS.reduce((sum, element) => sum + Math.min(goalWeight[element], a.elements[element]) * (goalWeight[element] ? 1 : .05), 0);
       const bScore = ELEMENTS.reduce((sum, element) => sum + Math.min(goalWeight[element], b.elements[element]) * (goalWeight[element] ? 1 : .05), 0);
-      const aUpgrade = Math.max(0, a.quartzLevel - policy.currentLevel);
-      const bUpgrade = Math.max(0, b.quartzLevel - policy.currentLevel);
+      const aUpgrade = Math.max(0, requiredQuartzLevel(a) - policy.currentLevel);
+      const bUpgrade = Math.max(0, requiredQuartzLevel(b) - policy.currentLevel);
       return bScore - aScore || aUpgrade - bUpgrade || a.name.localeCompare(b.name);
     });
     candidates[slot.id] = [...list, null];
@@ -215,7 +220,8 @@ export function solveOrbment(request: SolveRequest): SolveResult {
         if ((usage[candidate.id] ?? 0) >= availableCount(request, candidate.id)) continue;
         if (candidate.uniqueEquip && (usage[candidate.id] ?? 0) > 0) continue;
         if (candidate.family && usedFamilies.has(candidate.family)) continue;
-        if (candidate.quartzLevel > policy.currentLevel && (!policy.allowUpgrade || candidate.quartzLevel > policy.maxLevel)) continue;
+        const requiredLevel = requiredQuartzLevel(candidate);
+        if (requiredLevel > policy.currentLevel && (!policy.allowUpgrade || requiredLevel > policy.maxLevel)) continue;
         assignments[slot.id] = candidate.id;
         usage[candidate.id] = (usage[candidate.id] ?? 0) + 1;
         usedNames.add(nameKey);
@@ -236,5 +242,5 @@ export function solveOrbment(request: SolveRequest): SolveResult {
 
   search(0);
   if (!builds.length) return { status: 'no_solution', builds, nodesVisited, truncated, message: truncated ? '在本次搜索上限内未找到合法方案。可尝试减少目标或允许更多升级与购买。' : '未找到满足全部必须魔法的合法配置。请检查库存、商店与槽位升级策略。' };
-  return { status: 'solved', builds, nodesVisited, truncated, message: `找到 ${builds.length} 个最优候选方案${truncated ? '（已达到搜索上限）' : ''}。` };
+  return { status: 'solved', builds, nodesVisited, truncated, message: truncated ? `找到 ${builds.length} 个已搜索范围内的最佳候选方案（已达到搜索上限）。` : `找到 ${builds.length} 个最优候选方案。` };
 }

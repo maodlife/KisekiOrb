@@ -10,6 +10,6 @@ export function getQuartzSeries(quartz: Pick<Quartz, 'series' | 'elements'>): El
 export function compareQuartzBySeriesLevelName(a: Quartz, b: Quartz): number {
   const seriesDifference = ELEMENTS.indexOf(getQuartzSeries(a)) - ELEMENTS.indexOf(getQuartzSeries(b));
   if (seriesDifference !== 0) return seriesDifference;
-  const levelDifference = a.quartzLevel - b.quartzLevel;
+  const levelDifference = (a.quartzLevel ?? Number.MAX_SAFE_INTEGER) - (b.quartzLevel ?? Number.MAX_SAFE_INTEGER);
   return levelDifference !== 0 ? levelDifference : nameCollator.compare(a.name, b.name);
 }

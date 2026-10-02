@@ -102,9 +102,15 @@ test('a slot without upgrade permission is never changed', () => {
   assert.equal(result.status, 'solved'); assert.equal(result.builds[0].slotFinalLevels[0], 1);
 });
 
-test('element restrictions are enforced', () => {
-  const character = request().character; character.lines = [{ id: 'L1', name: 'L1', slots: [0] }]; character.slots[0].restriction = 'earth';
-  assert.equal(solveOrbment(request({ character, quartz: [q('water', { water: 3 })] })).status, 'no_solution');
+test('element restrictions are enforced by quartz series', () => {
+  const character = request().character; character.lines = [{ id: 'L1', name: 'L1', slots: [0] }]; character.slots[0].restriction = 'water';
+  const mixed = q('mixed', { water: 3, wind: 3 }); mixed.series = 'wind';
+  assert.equal(solveOrbment(request({ character, quartz: [mixed], arts: [art('water', { water: 3 })] })).status, 'no_solution');
+});
+
+test('a quartz with unknown level is usable without an upgrade', () => {
+  const unknownLevel = q('unknown', { water: 3 }); unknownLevel.quartzLevel = null; unknownLevel.uniqueEquip = null;
+  assert.equal(solveOrbment(request({ quartz: [unknownLevel], owned: { unknown: 1 } })).status, 'solved');
 });
 
 test('family and unique rules are enforced', () => {

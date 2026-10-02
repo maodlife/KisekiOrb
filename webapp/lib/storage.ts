@@ -12,9 +12,9 @@ export function loadGameData(): GameData {
     const value = window.localStorage.getItem(GAME_DATA_KEY);
     if (!value) return clone(DEFAULT_GAME_DATA);
     const stored = JSON.parse(value) as GameData;
-    // Replace only the pre-release sample bundled during development. Imported or edited
-    // databases keep their own version and remain independent from player state.
-    return stored.version === 'sample-0.1' ? clone(DEFAULT_GAME_DATA) : stored;
+    // Local data may have been edited or imported even when it still carries a sample
+    // version, so never replace it implicitly. The explicit reset action loads defaults.
+    return stored;
   } catch {
     return clone(DEFAULT_GAME_DATA);
   }
@@ -27,8 +27,27 @@ export function loadPlayerState(gameData: GameData): PlayerState {
     const value = window.localStorage.getItem(PLAYER_STATE_KEY);
     if (!value) return fallback;
     const stored = JSON.parse(value) as PlayerState;
-    for (const quartz of gameData.quartz) if (!stored.resources[quartz.id]) stored.resources[quartz.id] = fallback.resources[quartz.id];
-    for (const character of gameData.characters) if (!stored.slotLevels[character.id]) stored.slotLevels[character.id] = fallback.slotLevels[character.id];
+    if (!stored.resources || !stored.slotLevels || !stored.lastSolver) return fallback;
+
+    const hasCurrentQuartz = gameData.quartz.some((quartz) => stored.resources[quartz.id]);
+    if (stored.version === 'player-0.1' && gameData.version === DEFAULT_GAME_DATA.version && !hasCurrentQuartz) return fallback;
+
+    stored.version = fallback.version;
+    stored.resources = Object.fromEntries(gameData.quartz.map((quartz) => [
+      quartz.id,
+      stored.resources[quartz.id] ?? fallback.resources[quartz.id],
+    ]));
+    stored.slotLevels = Object.fromEntries(gameData.characters.map((character) => [
+      character.id,
+      { ...fallback.slotLevels[character.id], ...(stored.slotLevels[character.id] ?? {}) },
+    ]));
+    if (!gameData.characters.some((character) => character.id === stored.lastSolver.characterId)) {
+      stored.lastSolver.characterId = fallback.lastSolver.characterId;
+    }
+    const validArts = stored.lastSolver.mustHaveArts.filter((id) => gameData.arts.some((art) => art.id === id));
+    stored.lastSolver.mustHaveArts = validArts.length || stored.lastSolver.mustHaveArts.length === 0
+      ? validArts
+      : fallback.lastSolver.mustHaveArts;
     return stored;
   } catch {
     return fallback;

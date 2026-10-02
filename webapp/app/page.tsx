@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,9 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
-import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveResult } from '@/lib/domain.ts';
+import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveRequest, type SolveResult } from '@/lib/domain.ts';
 import { compareQuartzBySeriesLevelName, getQuartzSeries } from '@/lib/quartz-series.ts';
-import { solveOrbment } from '@/lib/solver.ts';
+
 import { loadGameData, loadPlayerState, resetLocalData, saveGameData, savePlayerState } from '@/lib/storage.ts';
 
 type View = 'solver' | 'inventory' | 'characters' | 'data';
@@ -34,6 +34,29 @@ const makePolicies = (character: Character, player: PlayerState): Record<number,
   return [slot.id, { currentLevel, allowUpgrade: false, maxLevel: currentLevel }];
 }));
 
+function withLineSlots(line: Character['lines'][number], slots: number[]): Character['lines'][number] {
+  if (!line.edges) return { ...line, slots };
+  const members = new Set(slots);
+  const edges = line.edges.filter(([fromId, toId]) => members.has(fromId) && members.has(toId));
+  if (slots.length < 2) return { ...line, slots, edges };
+
+  const connected = new Set([slots[0]]);
+  while (connected.size < slots.length) {
+    let progressed = false;
+    for (const [fromId, toId] of edges) {
+      if (connected.has(fromId) === connected.has(toId)) continue;
+      connected.add(connected.has(fromId) ? toId : fromId);
+      progressed = true;
+    }
+    if (progressed) continue;
+    const next = slots.find((slotId) => !connected.has(slotId));
+    if (next == null) break;
+    edges.push([slots[0], next]);
+    connected.add(next);
+  }
+  return { ...line, slots, edges };
+}
+
 function nonZeroElements(values: Record<ElementKey, number>) {
   return ELEMENTS.filter((element) => values[element] > 0);
 }
@@ -47,11 +70,14 @@ function ElementSummary({ values, compare }: { values: Record<ElementKey, number
 function OrbmentGraph({ character, policies, assignments, quartzNames, activeSlot, onSlot }: { character: Character; policies?: Record<number, SlotPolicy>; assignments?: Record<number, string | null>; quartzNames?: Record<string, string>; activeSlot?: number; onSlot?: (id: number) => void }) {
   return <div className="orbment-stage interactive" aria-label={`${character.name}的七槽导力器图`}>
     <svg viewBox="0 0 100 100" aria-hidden="true">
-      {character.lines.flatMap((line, lineIndex) => line.slots.slice(1).map((slotId, index) => {
-        const from = character.slots.find((slot) => slot.id === line.slots[index]);
-        const to = character.slots.find((slot) => slot.id === slotId);
-        return from && to ? <line key={`${line.id}-${slotId}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} className={`orb-line line-${lineIndex % 4}`} /> : null;
-      }))}
+      {character.lines.flatMap((line, lineIndex) => {
+        const edges = line.edges ?? line.slots.slice(1).map((slotId, index) => [line.slots[index], slotId] as [number, number]);
+        return edges.map(([fromId, toId], edgeIndex) => {
+          const from = character.slots.find((slot) => slot.id === fromId);
+          const to = character.slots.find((slot) => slot.id === toId);
+          return from && to ? <line key={`${line.id}-${fromId}-${toId}-${edgeIndex}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} className={`orb-line line-${lineIndex % 4}`} /> : null;
+        });
+      })}
     </svg>
     {character.slots.map((slot) => {
       const policy = policies?.[slot.id];
@@ -74,9 +100,9 @@ export default function Home() {
   const [player, setPlayer] = useState<PlayerState>(() => createDefaultPlayerState(DEFAULT_GAME_DATA));
   const [hydrated, setHydrated] = useState(false);
   const [characterId, setCharacterId] = useState(DEFAULT_GAME_DATA.characters[0].id);
-  const [resourceMode, setResourceMode] = useState<ResourceMode>('owned_plus_shop');
+  const [resourceMode, setResourceMode] = useState<ResourceMode>('owned_only');
   const [ranking, setRanking] = useState<RankingPreset>('resource');
-  const [mustHave, setMustHave] = useState<string[]>(['la_tearial', 'clock_up']);
+  const [mustHave, setMustHave] = useState<string[]>(['art-water-06', 'art-time-07']);
   const [policies, setPolicies] = useState<Record<number, SlotPolicy>>(() => makePolicies(DEFAULT_GAME_DATA.characters[0], createDefaultPlayerState(DEFAULT_GAME_DATA)));
   const [activeSlot, setActiveSlot] = useState(0);
   const [artSearch, setArtSearch] = useState('');
@@ -85,6 +111,8 @@ export default function Home() {
   const [solving, setSolving] = useState(false);
   const [expandedBuild, setExpandedBuild] = useState(0);
   const [notice, setNotice] = useState('');
+  const solverWorker = useRef<Worker | null>(null);
+  const solveGeneration = useRef(0);
 
   useEffect(() => {
     const loadedGame = loadGameData();
@@ -97,6 +125,16 @@ export default function Home() {
     setPolicies(makePolicies(savedCharacter, loadedPlayer)); setActiveSlot(savedCharacter.slots[0]?.id ?? 0); setHydrated(true);
   }, []);
 
+  useEffect(() => () => solverWorker.current?.terminate(), []);
+  useEffect(() => {
+    solveGeneration.current += 1;
+    if (solverWorker.current) {
+      solverWorker.current.terminate();
+      solverWorker.current = null;
+      setSolving(false);
+    }
+    setSolveResult(null);
+  }, [characterId, resourceMode, ranking, mustHave, policies, gameData, player.resources]);
   useEffect(() => { if (hydrated) saveGameData(gameData); }, [gameData, hydrated]);
   useEffect(() => { if (hydrated) savePlayerState(player); }, [player, hydrated]);
   useEffect(() => {
@@ -121,11 +159,33 @@ export default function Home() {
 
   const runSolver = () => {
     setSolving(true); setSolveResult(null);
-    window.setTimeout(() => {
-      const result = solveOrbment({ character, quartz: gameData.quartz, arts: gameData.arts, resources: player.resources, resourceMode, slotPolicies: policies, mustHaveArts: mustHave, rankingPreset: ranking, maxResults: 20 });
-      setSolveResult(result); setExpandedBuild(0); setSolving(false);
-      window.setTimeout(() => document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 20);
-    }, 30);
+    solverWorker.current?.terminate();
+    const generation = ++solveGeneration.current;
+    let startedWorker: Worker | null = null;
+
+    try {
+      const worker = new Worker(new URL('../lib/solver.worker.ts', import.meta.url), { type: 'module' });
+      const request: SolveRequest = { character, quartz: gameData.quartz, arts: gameData.arts, resources: player.resources, resourceMode, slotPolicies: policies, mustHaveArts: mustHave, rankingPreset: ranking, maxResults: 20 };
+      startedWorker = worker; solverWorker.current = worker;
+      worker.onmessage = (event: MessageEvent<SolveResult>) => {
+        if (solverWorker.current !== worker || solveGeneration.current !== generation) return;
+        solverWorker.current = null; worker.terminate();
+        setSolveResult(event.data); setExpandedBuild(0); setSolving(false);
+        window.setTimeout(() => document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 20);
+      };
+      worker.onerror = () => {
+        if (solverWorker.current !== worker || solveGeneration.current !== generation) return;
+        solverWorker.current = null; worker.terminate();
+        setSolveResult({ status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '求解器启动失败，请刷新页面后重试。' });
+        setSolving(false);
+      };
+      worker.postMessage(request);
+    } catch {
+      startedWorker?.terminate();
+      if (solverWorker.current === startedWorker) solverWorker.current = null;
+      setSolveResult({ status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '当前浏览器无法启动后台求解器。' });
+      setSolving(false);
+    }
   };
 
   const updateResource = (id: string, patch: Partial<PlayerState['resources'][string]>) => setPlayer((current) => ({ ...current, resources: { ...current.resources, [id]: { ...(current.resources[id] ?? { quartzId: id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }), ...patch } } }));
@@ -164,7 +224,7 @@ export default function Home() {
 
   const resetAll = () => {
     resetLocalData(); const freshGame = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)) as GameData; const freshPlayer = createDefaultPlayerState(freshGame);
-    setGameData(freshGame); setPlayer(freshPlayer); setCharacterId(freshGame.characters[0].id); setPolicies(makePolicies(freshGame.characters[0], freshPlayer)); setMustHave(freshPlayer.lastSolver.mustHaveArts); setSolveResult(null); setNotice('已恢复内置示例数据。');
+    setGameData(freshGame); setPlayer(freshPlayer); setCharacterId(freshGame.characters[0].id); setPolicies(makePolicies(freshGame.characters[0], freshPlayer)); setMustHave(freshPlayer.lastSolver.mustHaveArts); setSolveResult(null); setNotice('已恢复内置截图数据。');
   };
 
   return <main className="app-shell">
@@ -200,7 +260,7 @@ export default function Home() {
 
           <aside className="controls-column">
             <section className="panel compact-panel"><p className="step">02 · 回路来源</p><button className={`radio-row ${resourceMode === 'owned_only' ? 'selected' : ''}`} onClick={() => setResourceMode('owned_only')}><i />只使用已拥有<span>{Object.values(player.resources).filter((item) => item.ownedCount > 0).length} 种可用</span></button><button className={`radio-row ${resourceMode === 'owned_plus_shop' ? 'selected' : ''}`} onClick={() => setResourceMode('owned_plus_shop')}><i />已拥有 + 商店<span>{Object.values(player.resources).filter((item) => item.ownedCount > 0 || item.shopAvailable).length} 种可用</span></button></section>
-            <section className="panel compact-panel arts-picker"><div className="panel-heading tight"><div><p className="step">03 · 必须魔法</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={() => setMustHave([])}>清空</button>}</div><div className="search-box"><Search size={14} /><input value={artSearch} onChange={(event) => setArtSearch(event.target.value)} placeholder="搜索魔法名称或类型" /></div><div className="arts-list">{gameData.arts.filter((art) => `${art.name}${art.category}`.toLowerCase().includes(artSearch.toLowerCase())).map((art) => <button key={art.id} className={`art-option ${mustHave.includes(art.id) ? 'selected' : ''}`} onClick={() => toggleArt(art.id)}><span className="check-box">{mustHave.includes(art.id) && <Check size={12} />}</span><span><b>{art.name}</b><small>{art.category} · <ElementSummary values={art.requirements} /></small></span></button>)}</div></section>
+            <section className="panel compact-panel arts-picker"><div className="panel-heading tight"><div><p className="step">03 · 必须魔法</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={() => setMustHave([])}>清空</button>}</div><div className="search-box"><Search size={14} /><input value={artSearch} onChange={(event) => setArtSearch(event.target.value)} placeholder="搜索魔法名称或类型" /></div><div className="arts-list">{gameData.arts.filter((art) => `${art.name}${art.category}${art.range ?? ''}${art.effects?.join('') ?? ''}`.toLowerCase().includes(artSearch.toLowerCase())).map((art) => <button key={art.id} className={`art-option ${mustHave.includes(art.id) ? 'selected' : ''}`} onClick={() => toggleArt(art.id)}><span className="check-box">{mustHave.includes(art.id) && <Check size={12} />}</span><span><b>{art.name}</b><small>{art.category} · EP {art.epCost}{art.range ? ` · ${art.range}` : ''} · <ElementSummary values={art.requirements} /></small></span></button>)}</div></section>
             <section className="panel compact-panel"><p className="step">04 · 优化目标</p><NativeSelect className="wide-select" value={ranking} onChange={(event) => setRanking(event.target.value as RankingPreset)}>{Object.entries(RANKING_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect><p className="helper">使用稳定字典序排序，优先级清晰可解释。</p></section>
             <button className="solve-button" disabled={solving || mustHave.length === 0} onClick={runSolver}><Sparkles size={18} />{solving ? '正在搜索合法配置…' : '开始求解'}<span>最多 20 组</span></button>
           </aside>
@@ -238,10 +298,10 @@ function BuildDetails({ build, character, policies, quartzNames, artById, mustHa
 }
 
 function InventoryView({ gameData, player, search, setSearch, updateResource, setPlayer }: { gameData: GameData; player: PlayerState; search: string; setSearch: (value: string) => void; updateResource: (id: string, patch: Partial<PlayerState['resources'][string]>) => void; setPlayer: React.Dispatch<React.SetStateAction<PlayerState>> }) {
-  const shown = gameData.quartz.filter((quartz) => `${quartz.name}${quartz.family ?? ''}`.toLowerCase().includes(search.toLowerCase()));
+  const shown = gameData.quartz.filter((quartz) => `${quartz.name}${quartz.family ?? ''}${ELEMENT_LABELS[getQuartzSeries(quartz)]}${quartz.notes ?? ''}`.toLowerCase().includes(search.toLowerCase()));
   const totalOwned = Object.values(player.resources).reduce((sum, item) => sum + item.ownedCount, 0);
   const setAllShop = (value: boolean) => setPlayer((current) => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).map(([id, item]) => [id, { ...item, shopAvailable: value }])) }));
-  return <><div className="stats-row"><Metric value={totalOwned} label="已拥有回路" /><Metric value={Object.values(player.resources).filter((item) => item.shopAvailable).length} label="商店可购种类" /><Metric value={gameData.quartz.length} label="基础数据库" /></div><section className="panel data-panel"><div className="data-toolbar"><div className="search-box large"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索回路名称或系列" /></div><div><Button variant="outline" onClick={() => setAllShop(true)}>全部设为可购</Button><Button variant="ghost" onClick={() => setAllShop(false)}>清空商店</Button></div></div><Table className="resource-table"><TableHeader><TableRow><TableHead>回路</TableHead><TableHead>元素值</TableHead><TableHead>拥有</TableHead><TableHead>商店</TableHead><TableHead>价格</TableHead><TableHead>购买上限</TableHead></TableRow></TableHeader><TableBody>{shown.map((quartz) => { const resource = player.resources[quartz.id] ?? { quartzId: quartz.id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }; return <TableRow key={quartz.id}><TableCell><b>{quartz.name}</b><small className="cell-note">Lv{quartz.quartzLevel} · {quartz.family ?? '无系列'}</small></TableCell><TableCell><ElementSummary values={quartz.elements} /></TableCell><TableCell><Input className="number-input" type="number" min={0} value={resource.ownedCount} onChange={(event) => updateResource(quartz.id, { ownedCount: Math.max(0, Number(event.target.value)) })} aria-label={`${quartz.name}拥有数量`} /></TableCell><TableCell><button role="switch" aria-label={`${quartz.name}商店可购`} aria-checked={resource.shopAvailable} className={`switch-control ${resource.shopAvailable ? 'on' : ''}`} onClick={() => updateResource(quartz.id, { shopAvailable: !resource.shopAvailable })}><span /></button></TableCell><TableCell><Input aria-label={`${quartz.name}商店价格`} className="price-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPrice ?? ''} placeholder="未录入" onChange={(event) => updateResource(quartz.id, { shopPrice: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell><TableCell><Input aria-label={`${quartz.name}购买上限`} className="number-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPurchaseLimit ?? ''} placeholder="∞" onChange={(event) => updateResource(quartz.id, { shopPurchaseLimit: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell></TableRow>; })}</TableBody></Table></section></>;
+  return <><div className="stats-row"><Metric value={totalOwned} label="已拥有回路" /><Metric value={Object.values(player.resources).filter((item) => item.shopAvailable).length} label="商店可购种类" /><Metric value={gameData.quartz.length} label="基础数据库" /></div><section className="panel data-panel"><div className="data-toolbar"><div className="search-box large"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索回路名称或系列" /></div><div><Button variant="outline" onClick={() => setAllShop(true)}>全部设为可购</Button><Button variant="ghost" onClick={() => setAllShop(false)}>清空商店</Button></div></div><Table className="resource-table"><TableHeader><TableRow><TableHead>回路</TableHead><TableHead>元素值</TableHead><TableHead>拥有</TableHead><TableHead>商店</TableHead><TableHead>价格</TableHead><TableHead>购买上限</TableHead></TableRow></TableHeader><TableBody>{shown.map((quartz) => { const resource = player.resources[quartz.id] ?? { quartzId: quartz.id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }; return <TableRow key={quartz.id}><TableCell><b>{quartz.name}</b><small className="cell-note">{quartz.quartzLevel == null ? '装备等级未录入' : `Lv${quartz.quartzLevel}`} · {ELEMENT_LABELS[getQuartzSeries(quartz)]}系列</small>{quartz.notes && <small className="cell-note">{quartz.notes}</small>}</TableCell><TableCell><ElementSummary values={quartz.elements} /></TableCell><TableCell><Input className="number-input" type="number" min={0} value={resource.ownedCount} onChange={(event) => updateResource(quartz.id, { ownedCount: Math.max(0, Number(event.target.value)) })} aria-label={`${quartz.name}拥有数量`} /></TableCell><TableCell><button role="switch" aria-label={`${quartz.name}商店可购`} aria-checked={resource.shopAvailable} className={`switch-control ${resource.shopAvailable ? 'on' : ''}`} onClick={() => updateResource(quartz.id, { shopAvailable: !resource.shopAvailable })}><span /></button></TableCell><TableCell><Input aria-label={`${quartz.name}商店价格`} className="price-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPrice ?? ''} placeholder="未录入" onChange={(event) => updateResource(quartz.id, { shopPrice: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell><TableCell><Input aria-label={`${quartz.name}购买上限`} className="number-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPurchaseLimit ?? ''} placeholder="∞" onChange={(event) => updateResource(quartz.id, { shopPurchaseLimit: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell></TableRow>; })}</TableBody></Table></section></>;
 }
 
 function CharacterCreateDialog({ gameData, onCreate }: { gameData: GameData; onCreate: (character: Character) => void }) {
@@ -292,7 +352,14 @@ function CharacterCreateDialog({ gameData, onCreate }: { gameData: GameData; onC
 function CharactersView({ gameData, character, player, switchCharacter, updateSlotLevel, patchCharacter, addCharacter }: { gameData: GameData; character: Character; player: PlayerState; switchCharacter: (id: string) => void; updateSlotLevel: (slotId: number, level: number) => void; patchCharacter: (character: Character) => void; addCharacter: (character: Character) => void }) {
   const policies = makePolicies(character, player);
   const patchSlot = (slotId: number, patch: Partial<Character['slots'][number]>) => patchCharacter({ ...character, slots: character.slots.map((slot) => slot.id === slotId ? { ...slot, ...patch } : slot) });
-  const toggleLineSlot = (lineId: string, slotId: number) => patchCharacter({ ...character, lines: character.lines.map((line) => line.id === lineId ? { ...line, slots: line.slots.includes(slotId) ? line.slots.filter((id) => id !== slotId) : [...line.slots, slotId] } : line) });
+  const toggleLineSlot = (lineId: string, slotId: number) => patchCharacter({
+    ...character,
+    lines: character.lines.map((line) => {
+      if (line.id !== lineId) return line;
+      const slots = line.slots.includes(slotId) ? line.slots.filter((id) => id !== slotId) : [...line.slots, slotId];
+      return withLineSlots(line, slots);
+    }),
+  });
   return <><div className="view-toolbar"><div><p className="step">正在编辑</p><NativeSelect value={character.id} onChange={(event) => switchCharacter(event.target.value)}>{gameData.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</NativeSelect></div><p>日常等级与静态导力器模板分开保存；线路直接引用物理槽位。</p><CharacterCreateDialog gameData={gameData} onCreate={addCharacter} /></div><div className="character-grid"><section className="panel orbment-panel character-graph"><div className="panel-heading"><div><p className="step">导力器拓扑</p><h2>{character.name}</h2></div><span className="badge">{character.lines.length} 条线路</span></div><OrbmentGraph character={character} policies={policies} /><div className="legend"><span><i className="legend-dot shared" />被多条线路引用即为共享</span></div></section><section className="panel data-panel slots-panel"><p className="step">物理槽位</p><Table><TableHeader><TableRow><TableHead>槽位</TableHead><TableHead>当前等级</TableHead><TableHead>最高等级</TableHead><TableHead>属性限制</TableHead></TableRow></TableHeader><TableBody>{character.slots.map((slot) => <TableRow key={slot.id}><TableCell><b>Slot {slot.id + 1}</b></TableCell><TableCell><NativeSelect value={player.slotLevels[character.id]?.[String(slot.id)] ?? slot.currentLevel} onChange={(event) => updateSlotLevel(slot.id, Number(event.target.value))}>{Array.from({ length: slot.maxGameLevel }, (_, index) => <option key={index + 1} value={index + 1}>Lv{index + 1}</option>)}</NativeSelect></TableCell><TableCell><NativeSelect value={slot.maxGameLevel} onChange={(event) => patchSlot(slot.id, { maxGameLevel: Number(event.target.value) })}>{[1, 2, 3].map((level) => <option key={level} value={level}>Lv{level}</option>)}</NativeSelect></TableCell><TableCell><NativeSelect value={slot.restriction ?? ''} onChange={(event) => patchSlot(slot.id, { restriction: (event.target.value || null) as ElementKey | null })}><option value="">无限制</option>{ELEMENTS.map((element) => <option key={element} value={element}>{ELEMENT_LABELS[element]}属性</option>)}</NativeSelect></TableCell></TableRow>)}</TableBody></Table></section></div><section className="panel data-panel lines-editor"><div className="panel-heading"><div><p className="step">线路成员</p><h2>物理槽引用</h2></div><span className="helper">同一 Slot 可出现在任意多条 Line 中</span></div>{character.lines.map((line) => <div className="line-editor" key={line.id}><b>{line.name}</b><div>{character.slots.map((slot) => <button key={slot.id} className={line.slots.includes(slot.id) ? 'selected' : ''} onClick={() => toggleLineSlot(line.id, slot.id)}>Slot {slot.id + 1}</button>)}</div></div>)}</section></>;
 }
 
@@ -318,24 +385,25 @@ function GameDataView({ gameData, setGameData, setPlayer, exportAll, importAll, 
   };
   const addArt = () => setGameData((current) => ({ ...current, arts: [...current.arts, { id: `art_${Date.now()}`, name: '新魔法', requirements: emptyElements(), epCost: 0, category: '未分类' }] }));
   return <>
-    <section className="panel backup-panel"><div><span className="backup-icon"><Database size={20} /></span><div><p className="step">本地数据安全</p><h2>基础数据与玩家状态分开存储</h2><p>备份文件会同时包含两类数据，导入时不会依赖网络。</p></div></div><div className="backup-actions"><Button onClick={exportAll}><Download />导出 JSON</Button><label className="button-label"><Upload size={15} />导入 JSON<input type="file" accept="application/json" onChange={importAll} /></label><Button variant="destructive" onClick={resetAll}><RotateCcw />恢复示例</Button></div></section>
+    <section className="panel backup-panel"><div><span className="backup-icon"><Database size={20} /></span><div><p className="step">本地数据安全</p><h2>基础数据与玩家状态分开存储</h2><p>备份文件会同时包含两类数据，导入时不会依赖网络。</p></div></div><div className="backup-actions"><Button onClick={exportAll}><Download />导出 JSON</Button><label className="button-label"><Upload size={15} />导入 JSON<input type="file" accept="application/json" onChange={importAll} /></label><Button variant="destructive" onClick={resetAll}><RotateCcw />恢复截图数据</Button></div></section>
     <div className="stats-row"><Metric value={gameData.characters.length} label="角色" /><Metric value={gameData.quartz.length} label="回路定义" /><Metric value={gameData.arts.length} label="魔法定义" /><Metric value={gameData.version} label="数据版本" /></div>
     <section className="panel data-panel">
       <div className="panel-heading"><div><p className="step">回路数据库</p><h2>Quartz 定义</h2></div><Button onClick={addQuartz}><Plus />添加回路</Button></div>
       <Table className="edit-table quartz-edit-table">
-        <TableHeader><TableRow><TableHead>名称</TableHead><TableHead>系列</TableHead><TableHead>等级</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}<TableHead><span className="sr-only">操作</span></TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>名称</TableHead><TableHead>系列</TableHead><TableHead>装备等级</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}<TableHead>效果</TableHead><TableHead><span className="sr-only">操作</span></TableHead></TableRow></TableHeader>
         <TableBody>{sortedQuartz.map((quartz) => <TableRow key={quartz.id}>
           <TableCell><Input value={quartz.name} onChange={(event) => patchQuartz(quartz.id, { name: event.target.value })} /><small className="cell-note">{quartz.id}</small></TableCell>
           <TableCell><RadioGroup className="series-radio" value={getQuartzSeries(quartz)} onValueChange={(value) => patchQuartz(quartz.id, { series: value as ElementKey })} aria-label={`${quartz.name}系列`}>{ELEMENTS.map((element) => <div className={`series-radio-option series-${element}`} key={element} title={`${ELEMENT_LABELS[element]}系列`}><RadioGroupItem value={element} aria-label={`${ELEMENT_LABELS[element]}系列`} /><span aria-hidden="true">{ELEMENT_LABELS[element]}</span></div>)}</RadioGroup></TableCell>
-          <TableCell><Input className="tiny-input" type="number" min={1} max={3} value={quartz.quartzLevel} onChange={(event) => patchQuartz(quartz.id, { quartzLevel: Number(event.target.value) })} /></TableCell>
+          <TableCell><Input className="tiny-input" type="number" min={1} max={3} value={quartz.quartzLevel ?? ''} placeholder="未知" onChange={(event) => patchQuartz(quartz.id, { quartzLevel: event.target.value === '' ? null : Number(event.target.value) })} /></TableCell>
           {ELEMENTS.map((element) => <TableCell key={element}><Input className={`tiny-input element-number ${quartz.elements[element] === 0 ? 'zero-value' : ''}`} type="number" min={0} value={quartz.elements[element]} onChange={(event) => patchQuartz(quartz.id, { elements: { ...quartz.elements, [element]: Math.max(0, Number(event.target.value)) } })} /></TableCell>)}
+          <TableCell><Input value={quartz.notes ?? ''} onChange={(event) => patchQuartz(quartz.id, { notes: event.target.value })} aria-label={`${quartz.name}效果`} /></TableCell>
           <TableCell><Button className="row-delete-button" variant="ghost" size="icon-sm" onClick={() => setPendingDelete(quartz)} aria-label={`删除回路${quartz.name}`} title={`删除${quartz.name}`}><Trash2 /><span className="sr-only">删除</span></Button></TableCell>
         </TableRow>)}</TableBody>
       </Table>
     </section>
     <section className="panel data-panel">
       <div className="panel-heading"><div><p className="step">魔法数据库</p><h2>Arts 条件</h2></div><Button onClick={addArt}><Plus />添加魔法</Button></div>
-      <Table className="edit-table"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>EP</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}</TableRow></TableHeader><TableBody>{gameData.arts.map((art) => <TableRow key={art.id}><TableCell><Input value={art.name} onChange={(event) => patchArt(art.id, { name: event.target.value })} /><small className="cell-note">{art.id}</small></TableCell><TableCell><Input value={art.category} onChange={(event) => patchArt(art.id, { category: event.target.value })} /></TableCell><TableCell><Input className="tiny-input" type="number" min={0} value={art.epCost} onChange={(event) => patchArt(art.id, { epCost: Number(event.target.value) })} /></TableCell>{ELEMENTS.map((element) => <TableCell key={element}><Input className={`tiny-input element-number ${art.requirements[element] === 0 ? 'zero-value' : ''}`} type="number" min={0} value={art.requirements[element]} onChange={(event) => patchArt(art.id, { requirements: { ...art.requirements, [element]: Math.max(0, Number(event.target.value)) } })} /></TableCell>)}</TableRow>)}</TableBody></Table>
+      <Table className="edit-table"><TableHeader><TableRow><TableHead>名称</TableHead><TableHead>类型</TableHead><TableHead>EP</TableHead>{ELEMENTS.map((element) => <TableHead key={element}>{ELEMENT_LABELS[element]}</TableHead>)}</TableRow></TableHeader><TableBody>{gameData.arts.map((art) => <TableRow key={art.id}><TableCell><Input value={art.name} onChange={(event) => patchArt(art.id, { name: event.target.value })} /><small className="cell-note">{art.id}{art.range ? ` · ${art.range}` : ''}{art.power ? ` · 威力 ${art.power}` : ''}</small></TableCell><TableCell><Input value={art.category} onChange={(event) => patchArt(art.id, { category: event.target.value })} />{art.effects?.length ? <small className="cell-note">{art.effects.join(' / ')}</small> : null}</TableCell><TableCell><Input className="tiny-input" type="number" min={0} value={art.epCost} onChange={(event) => patchArt(art.id, { epCost: Number(event.target.value) })} /></TableCell>{ELEMENTS.map((element) => <TableCell key={element}><Input className={`tiny-input element-number ${art.requirements[element] === 0 ? 'zero-value' : ''}`} type="number" min={0} value={art.requirements[element]} onChange={(event) => patchArt(art.id, { requirements: { ...art.requirements, [element]: Math.max(0, Number(event.target.value)) } })} /></TableCell>)}</TableRow>)}</TableBody></Table>
     </section>
     <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(nextOpen) => { if (!nextOpen) setPendingDelete(null); }}>
       <AlertDialogContent>
