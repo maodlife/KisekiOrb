@@ -13,6 +13,7 @@ import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
 import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveRequest, type SolveResult } from '@/lib/domain.ts';
 import { compareQuartzBySeriesLevelName, getQuartzSeries } from '@/lib/quartz-series.ts';
+import SolverWorker from '@/lib/solver.worker.ts?worker';
 
 import { loadGameData, loadPlayerState, resetLocalData, saveGameData, savePlayerState } from '@/lib/storage.ts';
 
@@ -164,7 +165,7 @@ export default function Home() {
     let startedWorker: Worker | null = null;
 
     try {
-      const worker = new Worker(new URL('../lib/solver.worker.ts', import.meta.url), { type: 'module' });
+      const worker = new SolverWorker();
       const request: SolveRequest = { character, quartz: gameData.quartz, arts: gameData.arts, resources: player.resources, resourceMode, slotPolicies: policies, mustHaveArts: mustHave, rankingPreset: ranking, maxResults: 20 };
       startedWorker = worker; solverWorker.current = worker;
       worker.onmessage = (event: MessageEvent<SolveResult>) => {
@@ -279,7 +280,7 @@ export default function Home() {
 function ResultsSection({ result, expanded, setExpanded, character, policies, quartzNames, artById, mustHave }: { result: SolveResult | null; expanded: number; setExpanded: (index: number) => void; character: Character; policies: Record<number, SlotPolicy>; quartzNames: Record<string, string>; artById: Record<string, GameData['arts'][number]>; mustHave: string[] }) {
   return <section id="results" className="results-section">
     {!result && <div className="results-preview"><div><p className="step">求解结果</p><h2>准备就绪</h2><p>选择目标魔法后，系统会同时搜索槽位升级、回路配装与必要购买。</p></div><div className="preview-metrics"><Metric value="7" label="物理槽位" /><Metric value={character.lines.length} label="条连线" /><Metric value="20" label="最多方案" /></div></div>}
-    {result && result.status !== 'solved' && <div className="empty-result"><span><X size={22} /></span><div><p className="step">没有合法方案</p><h2>{result.message}</h2><p>建议允许更多槽位升级、切换到商店模式，或减少必须魔法。</p></div></div>}
+    {result && result.status !== 'solved' && <div className="empty-result"><span><X size={22} /></span><div><p className="step">{result.status === 'no_solution' ? '没有合法方案' : '求解失败'}</p><h2>{result.message}</h2><p>{result.status === 'no_solution' ? '建议允许更多槽位升级、切换到商店模式，或减少必须魔法。' : '请检查错误提示后重试；此结果不代表当前配置无解。'}</p></div></div>}
     {result?.status === 'solved' && <><div className="results-title"><div><p className="step">求解结果</p><h2>{result.message}</h2></div><span>{result.nodesVisited.toLocaleString()} 个搜索节点</span></div><div className="build-list">{result.builds.map((build, index) => <article key={index} className={`build-card ${expanded === index ? 'expanded' : ''}`}>
       <button className="build-summary" onClick={() => setExpanded(index)}><span className="build-rank">#{index + 1}</span><div><b>{build.metrics.upgradeSteps === 0 && build.metrics.purchasedCount === 0 ? '无需额外资源' : `${build.metrics.upgradeSteps} 步升级 · ${build.metrics.purchasedCount} 颗购买`}</b><small>{build.metrics.extraArtsCount} 个额外魔法 · ATS +{build.metrics.ats} · SPD +{build.metrics.spd}</small></div><div className="summary-metrics"><Metric value={build.metrics.purchaseCost.toLocaleString()} label="购买成本" /><ChevronDown size={18} /></div></button>
       {expanded === index && <BuildDetails build={build} character={character} policies={policies} quartzNames={quartzNames} artById={artById} mustHave={mustHave} />}
