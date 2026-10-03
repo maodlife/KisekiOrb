@@ -64,3 +64,18 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: clamp(24px, 3
 @media (max-width: 1080px) { .character-grid { grid-template-columns: 1fr; }.build-details { grid-template-columns: 260px 1fr; }.build-columns { grid-template-columns: 1fr; }.line-totals { grid-template-columns: repeat(2, 1fr); }.line-totals > p { grid-column: 1 / -1; }.backup-panel { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 760px) { .top-actions .save-state { display: none; }.slot-policy { grid-template-columns: 1fr; gap: 10px; }.stats-row { overflow-x: auto; }.data-toolbar, .view-toolbar { align-items: flex-start; flex-direction: column; }.view-toolbar > p { width: 100%; }.build-details { grid-template-columns: 1fr; }.build-graph { display: none; }.build-columns { grid-template-columns: 1fr; }.line-totals { grid-column: 1; }.backup-actions { flex-wrap: wrap; }.results-title { align-items: flex-start; flex-direction: column; gap: 5px; } }
 @media (max-width: 620px) { .nav-item span { display: none; }.topbar { align-items: flex-start; }.ghost-button { width: 34px; padding: 8px; }.build-summary { grid-template-columns: auto 1fr; }.summary-metrics { grid-column: 2; justify-content: space-between; }.stats-row .metric { min-width: 105px; }.line-totals { grid-template-columns: 1fr; }.character-grid { display: block; }.slots-panel { margin-top: 12px; }.backup-actions > * { flex: 1; white-space: nowrap; }.character-create-form { grid-template-columns: 1fr; }.form-field-wide, .template-note, .form-error, .character-create-footer { grid-column: 1; } }
+.inventory-group-help { margin: 0 0 12px; color: #7f8c88; font-size: 11px; }
+.inventory-group { padding-block: 4px; }
+.inventory-group-trigger { width: 100%; padding: 12px 10px; align-items: center; background: #f4f5ef; border-radius: 8px; }
+.inventory-group-trigger:hover { background: #ecefe7; text-decoration: none; }
+.inventory-group-label { display: inline-flex; align-items: center; gap: 10px; }
+.inventory-group-label .element-token { padding: 5px 10px; font-size: 12px; }
+.inventory-group-count { color: #7f8c88; font-size: 11px; font-weight: 400; }
+.inventory-group-content { padding: 6px 0 12px; }
+.inventory-empty { padding: 30px 10px; text-align: center; color: #7f8c88; }
+.inventory-groups .resource-table { min-width: 800px; table-layout: fixed; }
+.resource-name-column { width: 30%; }
+.resource-elements-column { width: 25%; }
+.resource-owned-column, .resource-limit-column { width: 90px; }
+.resource-shop-column { width: 60px; }
+.resource-price-column { width: 120px; }

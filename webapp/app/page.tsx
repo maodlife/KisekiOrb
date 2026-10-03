@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -13,6 +14,7 @@ import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
 import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveRequest, type SolveResult } from '@/lib/domain.ts';
 import { compareQuartzBySeriesLevelName, getQuartzSeries } from '@/lib/quartz-series.ts';
+import { getQuartzGroup, groupQuartzForInventory, QUARTZ_GROUPS, type QuartzGroupId } from '@/lib/quartz-groups.ts';
 import SolverWorker from '@/lib/solver.worker.ts?worker';
 
 import { loadGameData, loadPlayerState, resetLocalData, saveGameData, savePlayerState } from '@/lib/storage.ts';
@@ -299,10 +301,36 @@ function BuildDetails({ build, character, policies, quartzNames, artById, mustHa
 }
 
 function InventoryView({ gameData, player, search, setSearch, updateResource, setPlayer }: { gameData: GameData; player: PlayerState; search: string; setSearch: (value: string) => void; updateResource: (id: string, patch: Partial<PlayerState['resources'][string]>) => void; setPlayer: React.Dispatch<React.SetStateAction<PlayerState>> }) {
-  const shown = gameData.quartz.filter((quartz) => `${quartz.name}${quartz.family ?? ''}${ELEMENT_LABELS[getQuartzSeries(quartz)]}${quartz.notes ?? ''}`.toLowerCase().includes(search.toLowerCase()));
+  const [expandedGroups, setExpandedGroups] = useState<QuartzGroupId[]>(QUARTZ_GROUPS);
+  const groupLabel = (id: QuartzGroupId) => id === 'none' ? '无元素' : `${ELEMENT_LABELS[id]}属性`;
+  const shown = gameData.quartz.filter((quartz) => `${quartz.name}${quartz.family ?? ''}${ELEMENT_LABELS[getQuartzSeries(quartz)]}${groupLabel(getQuartzGroup(quartz))}${quartz.notes ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const groups = groupQuartzForInventory(shown);
   const totalOwned = Object.values(player.resources).reduce((sum, item) => sum + item.ownedCount, 0);
   const setAllShop = (value: boolean) => setPlayer((current) => ({ ...current, resources: Object.fromEntries(Object.entries(current.resources).map(([id, item]) => [id, { ...item, shopAvailable: value }])) }));
-  return <><div className="stats-row"><Metric value={totalOwned} label="已拥有回路" /><Metric value={Object.values(player.resources).filter((item) => item.shopAvailable).length} label="商店可购种类" /><Metric value={gameData.quartz.length} label="基础数据库" /></div><section className="panel data-panel"><div className="data-toolbar"><div className="search-box large"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索回路名称或系列" /></div><div><Button variant="outline" onClick={() => setAllShop(true)}>全部设为可购</Button><Button variant="ghost" onClick={() => setAllShop(false)}>清空商店</Button></div></div><Table className="resource-table"><TableHeader><TableRow><TableHead>回路</TableHead><TableHead>元素值</TableHead><TableHead>拥有</TableHead><TableHead>商店</TableHead><TableHead>价格</TableHead><TableHead>购买上限</TableHead></TableRow></TableHeader><TableBody>{shown.map((quartz) => { const resource = player.resources[quartz.id] ?? { quartzId: quartz.id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }; return <TableRow key={quartz.id}><TableCell><b>{quartz.name}</b><small className="cell-note">{quartz.quartzLevel == null ? '装备等级未录入' : `Lv${quartz.quartzLevel}`} · {ELEMENT_LABELS[getQuartzSeries(quartz)]}系列</small>{quartz.notes && <small className="cell-note">{quartz.notes}</small>}</TableCell><TableCell><ElementSummary values={quartz.elements} /></TableCell><TableCell><Input className="number-input" type="number" min={0} value={resource.ownedCount} onChange={(event) => updateResource(quartz.id, { ownedCount: Math.max(0, Number(event.target.value)) })} aria-label={`${quartz.name}拥有数量`} /></TableCell><TableCell><button role="switch" aria-label={`${quartz.name}商店可购`} aria-checked={resource.shopAvailable} className={`switch-control ${resource.shopAvailable ? 'on' : ''}`} onClick={() => updateResource(quartz.id, { shopAvailable: !resource.shopAvailable })}><span /></button></TableCell><TableCell><Input aria-label={`${quartz.name}商店价格`} className="price-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPrice ?? ''} placeholder="未录入" onChange={(event) => updateResource(quartz.id, { shopPrice: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell><TableCell><Input aria-label={`${quartz.name}购买上限`} className="number-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPurchaseLimit ?? ''} placeholder="∞" onChange={(event) => updateResource(quartz.id, { shopPurchaseLimit: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell></TableRow>; })}</TableBody></Table></section></>;
+  return <>
+    <div className="stats-row"><Metric value={totalOwned} label="已拥有回路" /><Metric value={Object.values(player.resources).filter((item) => item.shopAvailable).length} label="商店可购种类" /><Metric value={gameData.quartz.length} label="基础数据库" /></div>
+    <section className="panel data-panel">
+      <div className="data-toolbar">
+        <div className="search-box large"><Search size={15} /><input value={search} onChange={(event) => { setSearch(event.target.value); setExpandedGroups(QUARTZ_GROUPS); }} placeholder="搜索回路名称、系列或分组" aria-label="搜索库存回路" /></div>
+        <div><Button variant="outline" onClick={() => setAllShop(true)}>全部设为可购</Button><Button variant="ghost" onClick={() => setAllShop(false)}>清空商店</Button></div>
+      </div>
+      <p className="inventory-group-help">按元素值中的第一个元素分组，点击分组标题可折叠或展开。</p>
+      {groups.length === 0 ? <p className="inventory-empty" role="status">没有匹配的回路，请尝试其他关键词。</p> : <Accordion className="inventory-groups" multiple value={expandedGroups} onValueChange={(value) => setExpandedGroups(value as QuartzGroupId[])}>
+        {groups.map((group) => <AccordionItem key={group.id} value={group.id} className="inventory-group">
+          <AccordionTrigger className="inventory-group-trigger" aria-label={`${groupLabel(group.id)}分组，${group.quartz.length}种回路`}>
+            <span className="inventory-group-label"><span className={`element-token el-${group.id}`}>{groupLabel(group.id)}</span><span className="inventory-group-count">{group.quartz.length} 种回路</span></span>
+          </AccordionTrigger>
+          <AccordionContent className="inventory-group-content">
+            <Table className="resource-table">
+              <colgroup><col className="resource-name-column" /><col className="resource-elements-column" /><col className="resource-owned-column" /><col className="resource-shop-column" /><col className="resource-price-column" /><col className="resource-limit-column" /></colgroup>
+              <TableHeader><TableRow><TableHead>回路</TableHead><TableHead>元素值</TableHead><TableHead>拥有</TableHead><TableHead>商店</TableHead><TableHead>价格</TableHead><TableHead>购买上限</TableHead></TableRow></TableHeader>
+              <TableBody>{group.quartz.map((quartz) => { const resource = player.resources[quartz.id] ?? { quartzId: quartz.id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }; return <TableRow key={quartz.id}><TableCell><b>{quartz.name}</b><small className="cell-note">{quartz.quartzLevel == null ? '装备等级未录入' : `Lv${quartz.quartzLevel}`} · {ELEMENT_LABELS[getQuartzSeries(quartz)]}系列</small>{quartz.notes && <small className="cell-note">{quartz.notes}</small>}</TableCell><TableCell><ElementSummary values={quartz.elements} /></TableCell><TableCell><Input className="number-input" type="number" min={0} value={resource.ownedCount} onChange={(event) => updateResource(quartz.id, { ownedCount: Math.max(0, Number(event.target.value)) })} aria-label={`${quartz.name}拥有数量`} /></TableCell><TableCell><button role="switch" aria-label={`${quartz.name}商店可购`} aria-checked={resource.shopAvailable} className={`switch-control ${resource.shopAvailable ? 'on' : ''}`} onClick={() => updateResource(quartz.id, { shopAvailable: !resource.shopAvailable })}><span /></button></TableCell><TableCell><Input aria-label={`${quartz.name}商店价格`} className="price-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPrice ?? ''} placeholder="未录入" onChange={(event) => updateResource(quartz.id, { shopPrice: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell><TableCell><Input aria-label={`${quartz.name}购买上限`} className="number-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPurchaseLimit ?? ''} placeholder="∞" onChange={(event) => updateResource(quartz.id, { shopPurchaseLimit: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell></TableRow>; })}</TableBody>
+            </Table>
+          </AccordionContent>
+        </AccordionItem>)}
+      </Accordion>}
+    </section>
+  </>;
 }
 
 function CharacterCreateDialog({ gameData, onCreate }: { gameData: GameData; onCreate: (character: Character) => void }) {
