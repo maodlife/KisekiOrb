@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ART_GROUPS, getArtGroup, groupArtsByFirstElement, type ArtGroupId } from '@/lib/art-groups.ts';
 import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
 import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveRequest, type SolveResult } from '@/lib/domain.ts';
@@ -261,12 +262,10 @@ export default function Home() {
             <div className="legend"><span><i className="legend-dot shared" />共享节点</span><span><i className="legend-dot upgrade" />可升级范围</span><span>点击槽位单独设置</span></div>
           </section>
 
-          <aside className="controls-column">
             <section className="panel compact-panel"><p className="step">02 · 回路来源</p><button className={`radio-row ${resourceMode === 'owned_only' ? 'selected' : ''}`} onClick={() => setResourceMode('owned_only')}><i />只使用已拥有<span>{Object.values(player.resources).filter((item) => item.ownedCount > 0).length} 种可用</span></button><button className={`radio-row ${resourceMode === 'owned_plus_shop' ? 'selected' : ''}`} onClick={() => setResourceMode('owned_plus_shop')}><i />已拥有 + 商店<span>{Object.values(player.resources).filter((item) => item.ownedCount > 0 || item.shopAvailable).length} 种可用</span></button></section>
-            <section className="panel compact-panel arts-picker"><div className="panel-heading tight"><div><p className="step">03 · 必须魔法</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={() => setMustHave([])}>清空</button>}</div><div className="search-box"><Search size={14} /><input value={artSearch} onChange={(event) => setArtSearch(event.target.value)} placeholder="搜索魔法名称或类型" /></div><div className="arts-list">{gameData.arts.filter((art) => `${art.name}${art.category}${art.range ?? ''}${art.effects?.join('') ?? ''}`.toLowerCase().includes(artSearch.toLowerCase())).map((art) => <button key={art.id} className={`art-option ${mustHave.includes(art.id) ? 'selected' : ''}`} onClick={() => toggleArt(art.id)}><span className="check-box">{mustHave.includes(art.id) && <Check size={12} />}</span><span><b>{art.name}</b><small>{art.category} · EP {art.epCost}{art.range ? ` · ${art.range}` : ''} · <ElementSummary values={art.requirements} /></small></span></button>)}</div></section>
+            <ArtsPicker arts={gameData.arts} mustHave={mustHave} toggleArt={toggleArt} clearSelection={() => setMustHave([])} search={artSearch} setSearch={setArtSearch} />
             <section className="panel compact-panel"><p className="step">04 · 优化目标</p><NativeSelect className="wide-select" value={ranking} onChange={(event) => setRanking(event.target.value as RankingPreset)}>{Object.entries(RANKING_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect><p className="helper">使用稳定字典序排序，优先级清晰可解释。</p></section>
             <button className="solve-button" disabled={solving || mustHave.length === 0} onClick={runSolver}><Sparkles size={18} />{solving ? '正在搜索合法配置…' : '开始求解'}<span>最多 20 组</span></button>
-          </aside>
         </div>
         <ResultsSection result={solveResult} expanded={expandedBuild} setExpanded={setExpandedBuild} character={character} policies={policies} quartzNames={quartzNames} artById={artById} mustHave={mustHave} />
       </>}
@@ -277,6 +276,33 @@ export default function Home() {
     </section>
     {notice && <output className="toast"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={14} /></button></output>}
   </main>;
+}
+
+function ArtsPicker({ arts, mustHave, toggleArt, clearSelection, search, setSearch }: { arts: GameData['arts']; mustHave: string[]; toggleArt: (id: string) => void; clearSelection: () => void; search: string; setSearch: (value: string) => void }) {
+  const [expandedGroups, setExpandedGroups] = useState<ArtGroupId[]>(ART_GROUPS);
+  const groupLabel = (id: ArtGroupId) => id === 'none' ? '无元素' : `${ELEMENT_LABELS[id]}属性`;
+  const shown = arts.filter((art) => `${art.name}${art.category}${art.range ?? ''}${art.effects?.join('') ?? ''}${groupLabel(getArtGroup(art))}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const groups = groupArtsByFirstElement(shown);
+  return <section className="panel compact-panel arts-picker">
+    <div className="panel-heading tight"><div><p className="step">03 · 必须魔法</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={clearSelection} aria-label="清空必须魔法">清空</button>}</div>
+    <div className="search-box"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setExpandedGroups(ART_GROUPS); }} placeholder="搜索魔法名称、类型或分组" aria-label="搜索必须魔法" /></div>
+    <p className="art-group-help">按需求中的第一个元素分组，点击分组标题可折叠或展开。</p>
+    <div className="arts-list">
+      {groups.length === 0 ? <p className="arts-empty" role="status">没有匹配的魔法，请尝试其他关键词。</p> : <Accordion className="art-groups" multiple value={expandedGroups} onValueChange={(value) => setExpandedGroups(value as ArtGroupId[])}>
+        {groups.map((group) => {
+          const selectedCount = group.arts.filter((art) => mustHave.includes(art.id)).length;
+          return <AccordionItem key={group.id} value={group.id} className="art-group">
+            <AccordionTrigger className="art-group-trigger" aria-label={`${groupLabel(group.id)}魔法分组，${group.arts.length}项，已选${selectedCount}项`}>
+              <span className="art-group-label"><span className={`element-token el-${group.id}`}>{groupLabel(group.id)}</span><span className="art-group-count">{group.arts.length} 项{selectedCount > 0 ? ` · 已选 ${selectedCount}` : ''}</span></span>
+            </AccordionTrigger>
+            <AccordionContent className="art-group-content">
+              <div className="art-group-options">{group.arts.map((art) => <button type="button" key={art.id} className={`art-option ${mustHave.includes(art.id) ? 'selected' : ''}`} onClick={() => toggleArt(art.id)} aria-label={art.name} aria-pressed={mustHave.includes(art.id)}><span className="check-box" aria-hidden="true">{mustHave.includes(art.id) && <Check size={14} />}</span><span><b>{art.name}</b><small>{art.category} · EP {art.epCost}{art.range ? ` · ${art.range}` : ''} · <ElementSummary values={art.requirements} /></small></span></button>)}</div>
+            </AccordionContent>
+          </AccordionItem>;
+        })}
+      </Accordion>}
+    </div>
+  </section>;
 }
 
 function ResultsSection({ result, expanded, setExpanded, character, policies, quartzNames, artById, mustHave }: { result: SolveResult | null; expanded: number; setExpanded: (index: number) => void; character: Character; policies: Record<number, SlotPolicy>; quartzNames: Record<string, string>; artById: Record<string, GameData['arts'][number]>; mustHave: string[] }) {
