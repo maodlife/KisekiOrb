@@ -1,5 +1,6 @@
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from './default-data.ts';
 import type { GameData, PlayerState } from './domain.ts';
+import { normalizeEquipment } from './equipment.ts';
 
 export const GAME_DATA_KEY = 'kiseki-orbment.game-data.v1';
 export const PLAYER_STATE_KEY = 'kiseki-orbment.player-state.v1';
@@ -20,35 +21,37 @@ export function loadGameData(): GameData {
   }
 }
 
+export function normalizePlayerState(gameData: GameData, stored: Partial<PlayerState>): PlayerState {
+  const fallback = createDefaultPlayerState(gameData);
+  if (!stored.resources || !stored.slotLevels || !stored.lastSolver) return fallback;
+  const resources = stored.resources;
+  const slotLevels = stored.slotLevels;
+  const lastSolver = { ...stored.lastSolver };
+
+  const hasCurrentQuartz = gameData.quartz.some((quartz) => resources[quartz.id]);
+  if (stored.version === 'player-0.1' && gameData.version === DEFAULT_GAME_DATA.version && !hasCurrentQuartz) return fallback;
+
+  const normalizedResources = Object.fromEntries(gameData.quartz.map((quartz) => [
+    quartz.id, resources[quartz.id] ?? fallback.resources[quartz.id],
+  ]));
+  const normalizedLevels = Object.fromEntries(gameData.characters.map((character) => [
+    character.id, { ...fallback.slotLevels[character.id], ...slotLevels[character.id] },
+  ]));
+  if (!['available_only', 'owned_only', 'owned_plus_shop'].includes(lastSolver.resourceMode)) lastSolver.resourceMode = fallback.lastSolver.resourceMode;
+  if (!gameData.characters.some((character) => character.id === lastSolver.characterId)) lastSolver.characterId = fallback.lastSolver.characterId;
+  const validArts = lastSolver.mustHaveArts.filter((id) => gameData.arts.some((art) => art.id === id));
+  lastSolver.mustHaveArts = validArts.length || lastSolver.mustHaveArts.length === 0 ? validArts : fallback.lastSolver.mustHaveArts;
+  return { version: fallback.version, resources: normalizedResources, slotLevels: normalizedLevels,
+    equipment: normalizeEquipment(gameData, normalizedResources, stored.equipment ?? {}), lastSolver };
+}
+
 export function loadPlayerState(gameData: GameData): PlayerState {
   const fallback = createDefaultPlayerState(gameData);
   if (typeof window === 'undefined') return fallback;
   try {
     const value = window.localStorage.getItem(PLAYER_STATE_KEY);
     if (!value) return fallback;
-    const stored = JSON.parse(value) as PlayerState;
-    if (!stored.resources || !stored.slotLevels || !stored.lastSolver) return fallback;
-
-    const hasCurrentQuartz = gameData.quartz.some((quartz) => stored.resources[quartz.id]);
-    if (stored.version === 'player-0.1' && gameData.version === DEFAULT_GAME_DATA.version && !hasCurrentQuartz) return fallback;
-
-    stored.version = fallback.version;
-    stored.resources = Object.fromEntries(gameData.quartz.map((quartz) => [
-      quartz.id,
-      stored.resources[quartz.id] ?? fallback.resources[quartz.id],
-    ]));
-    stored.slotLevels = Object.fromEntries(gameData.characters.map((character) => [
-      character.id,
-      { ...fallback.slotLevels[character.id], ...(stored.slotLevels[character.id] ?? {}) },
-    ]));
-    if (!gameData.characters.some((character) => character.id === stored.lastSolver.characterId)) {
-      stored.lastSolver.characterId = fallback.lastSolver.characterId;
-    }
-    const validArts = stored.lastSolver.mustHaveArts.filter((id) => gameData.arts.some((art) => art.id === id));
-    stored.lastSolver.mustHaveArts = validArts.length || stored.lastSolver.mustHaveArts.length === 0
-      ? validArts
-      : fallback.lastSolver.mustHaveArts;
-    return stored;
+    return normalizePlayerState(gameData, JSON.parse(value) as Partial<PlayerState>);
   } catch {
     return fallback;
   }

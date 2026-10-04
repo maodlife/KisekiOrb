@@ -76,7 +76,8 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: clamp(24px, 3
 .inventory-groups .resource-table { min-width: 800px; table-layout: fixed; }
 .resource-name-column { width: 30%; }
 .resource-elements-column { width: 25%; }
-.resource-owned-column, .resource-limit-column { width: 90px; }
+.resource-owned-column { width: 150px; }
+.resource-limit-column { width: 90px; }
 .resource-shop-column { width: 60px; }
 .resource-price-column { width: 120px; }
 
@@ -111,3 +112,11 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: clamp(24px, 3
 .arts-empty { padding: 30px 10px; text-align: center; color: #7f8c88; }
 @media (max-width: 760px) { .art-group-options { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 620px) { .solver-grid .compact-panel { padding: 18px 14px; } .art-group-help { font-size: 11px; } }
+
+.build-card-header { display: flex; align-items: center; }
+.build-card-header .build-summary { flex: 1; min-width: 0; width: auto; }
+.equip-button { margin-right: 16px; }
+.resource-quantity { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.resource-quantity > span { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.character-equipment { margin-top: 16px; }
+@media (max-width: 620px) { .equip-button { margin-right: 10px; } .build-card-header .build-summary { padding: 12px 10px; gap: 8px; } }

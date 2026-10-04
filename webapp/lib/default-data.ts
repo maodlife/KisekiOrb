@@ -18,7 +18,7 @@ export const DEFAULT_GAME_DATA: GameData = {
 
 export function createDefaultPlayerState(gameData: GameData = DEFAULT_GAME_DATA): PlayerState {
   return {
-    version: 'player-0.2',
+    version: 'player-0.3',
     resources: Object.fromEntries(gameData.quartz.map((item) => {
       const screenshotResource = screenshotResources[item.id];
       return [item.id, screenshotResource
@@ -28,6 +28,9 @@ export function createDefaultPlayerState(gameData: GameData = DEFAULT_GAME_DATA)
     slotLevels: Object.fromEntries(gameData.characters.map((character) => [
       character.id,
       Object.fromEntries(character.slots.map((slot) => [String(slot.id), slot.currentLevel])),
+    ])),
+    equipment: Object.fromEntries(gameData.characters.map((character) => [
+      character.id, Object.fromEntries(character.slots.map((slot) => [slot.id, null])),
     ])),
     lastSolver: {
       characterId: gameData.characters[0]?.id ?? '',

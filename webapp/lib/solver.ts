@@ -1,4 +1,5 @@
 import { getQuartzSeries } from './quartz-series.ts';
+import { getEquippedCounts } from './equipment.ts';
 import { getCentralSlotId, getQuartzLineType, type QuartzLineType } from './quartz-rules.ts';
 import {
   ELEMENTS,
@@ -30,9 +31,10 @@ function addElements(target: ElementValues, values: ElementValues) {
   for (const element of ELEMENTS) target[element] += values[element];
 }
 
-function availableCount(request: SolveRequest, quartzId: string) {
+function availableCount(request: SolveRequest, quartzId: string, teammateCounts: Record<string, number>) {
   const resource = request.resources[quartzId];
   if (!resource) return 0;
+  if (request.resourceMode === 'available_only') return Math.max(0, resource.ownedCount - (teammateCounts[quartzId] ?? 0));
   if (request.resourceMode === 'owned_only') return Math.max(0, resource.ownedCount);
   if (!resource.shopAvailable) return Math.max(0, resource.ownedCount);
   const purchasable = resource.shopPurchaseLimit == null ? request.character.slots.length : Math.max(0, resource.shopPurchaseLimit);
@@ -145,13 +147,14 @@ export function solveOrbment(request: SolveRequest): SolveResult {
   }
 
   const goalArts = request.mustHaveArts.map((id) => artById.get(id)!);
+  const teammateCounts = getEquippedCounts(request.equipment, request.character.id);
   const goalWeight = Object.fromEntries(ELEMENTS.map((element) => [element, Math.max(...goalArts.map((art) => art.requirements[element]), 0)])) as Record<ElementKey, number>;
   const candidates: Record<number, Candidate[]> = {};
   for (const slot of request.character.slots) {
     const policy = request.slotPolicies[slot.id];
     const allowedLevel = policy.allowUpgrade ? policy.maxLevel : policy.currentLevel;
     const list = request.quartz.filter((quartz) => {
-      if (availableCount(request, quartz.id) <= 0 || requiredQuartzLevel(quartz) > allowedLevel) return false;
+      if (availableCount(request, quartz.id, teammateCounts) <= 0 || requiredQuartzLevel(quartz) > allowedLevel) return false;
       if (slot.restriction && getQuartzSeries(quartz) !== slot.restriction) return false;
       return true;
     });
@@ -231,7 +234,7 @@ export function solveOrbment(request: SolveRequest): SolveResult {
       if (candidate) {
         const nameKey = equipNameKey(candidate);
         if (usedNames.has(nameKey)) continue;
-        if ((usage[candidate.id] ?? 0) >= availableCount(request, candidate.id)) continue;
+        if ((usage[candidate.id] ?? 0) >= availableCount(request, candidate.id, teammateCounts)) continue;
         if (candidate.uniqueEquip && (usage[candidate.id] ?? 0) > 0) continue;
         if (candidate.family && usedFamilies.has(candidate.family)) continue;
         if (lineType && typeScopes.some((scope) => scope.has(lineType))) continue;
