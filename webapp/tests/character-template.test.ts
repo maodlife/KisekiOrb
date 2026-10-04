@@ -7,6 +7,7 @@ test('creates a seven-slot character and distributes slots across lines', () => 
 
   assert.equal(character.id, 'kloe');
   assert.equal(character.name, '科洛丝');
+  assert.equal(character.centralSlotId, 0);
   assert.equal(character.slots.length, 7);
   assert.deepEqual(character.lines.map((line) => line.slots), [[0, 1, 4], [0, 2, 5], [0, 3, 6]]);
   assert.ok(character.lines.every((line) => line.slots[0] === 0));

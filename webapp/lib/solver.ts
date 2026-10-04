@@ -1,4 +1,5 @@
 import { getQuartzSeries } from './quartz-series.ts';
+import { getCentralSlotId, getQuartzLineType, type QuartzLineType } from './quartz-rules.ts';
 import {
   ELEMENTS,
   emptyElements,
@@ -138,6 +139,10 @@ export function solveOrbment(request: SolveRequest): SolveResult {
   const quartzById = new Map(request.quartz.map((quartz) => [quartz.id, quartz]));
   const artById = new Map(request.arts.map((art) => [art.id, art]));
   if (request.mustHaveArts.some((id) => !artById.has(id))) return { status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '请求中包含不存在的魔法。' };
+  const centralSlotId = getCentralSlotId(request.character);
+  if (centralSlotId !== null && !request.character.slots.some((slot) => slot.id === centralSlotId)) {
+    return { status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '中央插槽引用了不存在的物理槽位，请检查角色导力器设置。' };
+  }
 
   const goalArts = request.mustHaveArts.map((id) => artById.get(id)!);
   const goalWeight = Object.fromEntries(ELEMENTS.map((element) => [element, Math.max(...goalArts.map((art) => art.requirements[element]), 0)])) as Record<ElementKey, number>;
@@ -174,6 +179,13 @@ export function solveOrbment(request: SolveRequest): SolveResult {
   const usage: Record<string, number> = {};
   const usedNames = new Set<string>();
   const usedFamilies = new Set<string>();
+  const quartzLineTypes = new Map(request.quartz.map((quartz) => [quartz.id, getQuartzLineType(quartz)]));
+  const lineTypes = request.character.lines.map(() => new Set<QuartzLineType>());
+  const centralTypes = new Set<QuartzLineType>();
+  // The center has a separate quota; other shared slots consume every containing line's quota.
+  const slotTypeScopes = new Map(request.character.slots.map((slot) => [slot.id, slot.id === centralSlotId
+    ? [centralTypes]
+    : request.character.lines.flatMap((line, index) => line.slots.includes(slot.id) ? [lineTypes[index]] : [])]));
   const builds: Build[] = [];
   const signatures = new Set<string>();
   const maxNodes = request.maxNodes ?? 250_000;
@@ -214,18 +226,22 @@ export function solveOrbment(request: SolveRequest): SolveResult {
     const policy = request.slotPolicies[slot.id];
     for (const candidate of candidates[slot.id]) {
       if (nodesVisited >= maxNodes) { truncated = true; break; }
+      const lineType = candidate ? quartzLineTypes.get(candidate.id)! : null;
+      const typeScopes = slotTypeScopes.get(slot.id)!;
       if (candidate) {
         const nameKey = equipNameKey(candidate);
         if (usedNames.has(nameKey)) continue;
         if ((usage[candidate.id] ?? 0) >= availableCount(request, candidate.id)) continue;
         if (candidate.uniqueEquip && (usage[candidate.id] ?? 0) > 0) continue;
         if (candidate.family && usedFamilies.has(candidate.family)) continue;
+        if (lineType && typeScopes.some((scope) => scope.has(lineType))) continue;
         const requiredLevel = requiredQuartzLevel(candidate);
         if (requiredLevel > policy.currentLevel && (!policy.allowUpgrade || requiredLevel > policy.maxLevel)) continue;
         assignments[slot.id] = candidate.id;
         usage[candidate.id] = (usage[candidate.id] ?? 0) + 1;
         usedNames.add(nameKey);
         if (candidate.family) usedFamilies.add(candidate.family);
+        if (lineType) for (const scope of typeScopes) scope.add(lineType);
       } else assignments[slot.id] = null;
       assigned.add(slot.id);
       search(depth + 1);
@@ -235,6 +251,7 @@ export function solveOrbment(request: SolveRequest): SolveResult {
         if (usage[candidate.id] === 0) delete usage[candidate.id];
         usedNames.delete(equipNameKey(candidate));
         if (candidate.family) usedFamilies.delete(candidate.family);
+        if (lineType) for (const scope of typeScopes) scope.delete(lineType);
       }
       assignments[slot.id] = null;
     }

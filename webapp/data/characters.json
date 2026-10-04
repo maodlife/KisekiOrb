@@ -17,6 +17,7 @@
   "characters": [
     {
       "id": "kloe",
+      "centralSlotId": 3,
       "name": "克萝赛",
       "slots": [
         {
@@ -110,6 +111,7 @@
     },
     {
       "id": "estelle",
+      "centralSlotId": 3,
       "name": "艾丝蒂尔",
       "slots": [
         {
@@ -211,6 +213,7 @@
     },
     {
       "id": "schera",
+      "centralSlotId": 3,
       "name": "雪拉扎德",
       "slots": [
         {
@@ -312,6 +315,7 @@
     },
     {
       "id": "olivier",
+      "centralSlotId": 3,
       "name": "奥利维尔",
       "slots": [
         {

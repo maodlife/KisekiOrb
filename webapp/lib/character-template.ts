@@ -37,5 +37,5 @@ export function createCharacterTemplate(options: CharacterTemplateOptions): Char
     slots: [0, ...slots.slice(1).filter((slot) => (slot.id - 1) % lineCount === index).map((slot) => slot.id)],
   }));
 
-  return { id: options.id, name: options.name.trim(), slots, lines };
+  return { id: options.id, name: options.name.trim(), centralSlotId: 0, slots, lines };
 }

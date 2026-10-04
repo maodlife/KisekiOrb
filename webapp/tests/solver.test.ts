@@ -120,6 +120,106 @@ test('family and unique rules are enforced', () => {
   assert.equal(result.status, 'no_solution');
 });
 
+for (const [first, second] of [['毒之刃', '冻结之刃'], ['黄玉之盾', '苍玉之盾'], ['毒之理', '冻结之理']]) {
+  test(`one line cannot equip both ${first} and ${second}, including shop mode`, () => {
+    const character = request().character;
+    character.centralSlotId = null;
+    character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }];
+    const quartz = [q(first, { water: 2 }), q(second, { water: 2 })];
+    const arts = [art('water', { water: 4 })];
+    assert.equal(solveOrbment(request({ character, quartz, arts })).status, 'no_solution');
+    assert.equal(solveOrbment(request({ character, quartz, arts, owned: { [first]: 0, [second]: 0 }, shop: [first, second], mode: 'owned_plus_shop' })).status, 'no_solution');
+  });
+}
+
+test('blade, shield and reason are separate quotas on the same line', () => {
+  const character = request().character;
+  character.centralSlotId = null;
+  const quartz = [q('毒之刃', { water: 2 }), q('苍玉之盾', { water: 2 }), q('冻结之理', { water: 2 })];
+  const result = solveOrbment(request({ character, quartz, arts: [art('water', { water: 6 })] }));
+  assert.equal(result.status, 'solved');
+  assert.equal(result.builds.length, 6);
+  assert.ok(result.builds.every((build) => build.lineTotals.L1.water === 6));
+});
+
+test('different lines may equip the same type and backtracking preserves both solutions', () => {
+  const character = request().character;
+  character.centralSlotId = null;
+  character.lines = [{ id: 'L1', name: 'L1', slots: [0] }, { id: 'L2', name: 'L2', slots: [1] }];
+  const quartz = [q('毒之刃', { water: 2 }), q('冻结之刃', { fire: 2 })];
+  const arts = [art('water', { water: 2 }), art('fire', { fire: 2 })];
+  for (const candidates of [quartz, [...quartz].reverse()]) {
+    const result = solveOrbment(request({ character, quartz: candidates, arts }));
+    assert.equal(result.status, 'solved');
+    assert.equal(result.builds.length, 2);
+    assert.notEqual(result.builds[0].assignments[0], result.builds[0].assignments[1]);
+  }
+});
+
+test('the center has an independent quota while its elements still contribute to every line', () => {
+  const character = request().character;
+  character.centralSlotId = 0;
+  character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }, { id: 'L2', name: 'L2', slots: [0, 2] }];
+  const quartz = [q('毒之刃', { water: 2 }), q('冻结之刃', { fire: 2 }), q('石化之刃', { wind: 2 })];
+  const arts = [art('water-fire', { water: 2, fire: 2 }), art('water-wind', { water: 2, wind: 2 })];
+  const result = solveOrbment(request({ character, quartz, arts }));
+  assert.equal(result.status, 'solved');
+  assert.equal(result.builds.length, 2);
+  for (const build of result.builds) {
+    assert.equal(build.assignments[0], '毒之刃');
+    assert.equal(build.lineTotals.L1.water, 2);
+    assert.equal(build.lineTotals.L2.water, 2);
+    assert.notEqual(build.artWitness['water-fire'], build.artWitness['water-wind']);
+  }
+});
+
+test('one line cannot use a third blade even with a separate center quota', () => {
+  const character = request().character;
+  character.centralSlotId = 0;
+  const result = solveOrbment(request({ character, quartz: [q('毒之刃', { water: 2 }), q('冻结之刃', { water: 2 }), q('石化之刃', { water: 2 })], arts: [art('water', { water: 6 })] }));
+  assert.equal(result.status, 'no_solution');
+});
+
+test('a nonzero center ID works even when branch slots are searched before it', () => {
+  const character = request().character;
+  character.slots = character.slots.map((slot, index) => ({ ...slot, id: [42, 9, 13][index], restriction: ([null, 'fire', 'wind'] as const)[index] }));
+  character.centralSlotId = 42;
+  character.lines = [{ id: 'L1', name: 'L1', slots: [42, 9] }, { id: 'L2', name: 'L2', slots: [42, 13] }];
+  const result = solveOrbment(request({ character, quartz: [q('毒之刃', { water: 2 }), q('冻结之刃', { fire: 2 }), q('石化之刃', { wind: 2 })], arts: [art('water-fire', { water: 2, fire: 2 }), art('water-wind', { water: 2, wind: 2 })] }));
+  assert.equal(result.status, 'solved');
+  assert.equal(result.builds[0].assignments[42], '毒之刃');
+  assert.equal(result.builds[0].assignments[9], '冻结之刃');
+  assert.equal(result.builds[0].assignments[13], '石化之刃');
+});
+
+test('a noncentral shared slot consumes the type quota on every line that references it', () => {
+  const character = request().character;
+  character.centralSlotId = null;
+  character.slots[0].restriction = 'earth';
+  character.slots[1].restriction = 'water';
+  character.slots[2].restriction = 'water';
+  character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }, { id: 'L2', name: 'L2', slots: [0, 2] }];
+  const shared = q('毒之刃', { earth: 3, water: 2 });
+  const branch = q('冻结之刃', { water: 2 });
+  const result = solveOrbment(request({ character, quartz: [shared, branch], arts: [art('water', { water: 4 })] }));
+  assert.equal(result.status, 'no_solution');
+});
+
+test('ordinary quartz can coexist and keep their existing quantity and name rules', () => {
+  const character = request().character;
+  character.centralSlotId = null;
+  const result = solveOrbment(request({ character, quartz: [q('慈爱', { water: 2 }), q('瀑布', { water: 2 }), q('牙城', { water: 2 })], arts: [art('water', { water: 6 })] }));
+  assert.equal(result.status, 'solved');
+});
+
+test('invalid central slot references are reported as a request error', () => {
+  const character = request().character;
+  character.centralSlotId = 99;
+  const result = solveOrbment(request({ character }));
+  assert.equal(result.status, 'invalid_request');
+  assert.match(result.message, /中央插槽/);
+});
+
 test('no solution returns an explicit status and message', () => {
   const result = solveOrbment(request({ arts: [art('impossible', { mirage: 99 })] }));
   assert.equal(result.status, 'no_solution'); assert.deepEqual(result.builds, []); assert.match(result.message, /未找到/);

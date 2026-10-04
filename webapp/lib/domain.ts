@@ -17,7 +17,7 @@ export type Slot = {
 };
 
 export type Line = { id: string; name: string; slots: number[]; edges?: [number, number][] };
-export type Character = { id: string; name: string; slots: Slot[]; lines: Line[] };
+export type Character = { id: string; name: string; centralSlotId?: number | null; slots: Slot[]; lines: Line[] };
 
 export type Quartz = {
   id: string;
