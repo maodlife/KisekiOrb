@@ -5,7 +5,7 @@ import './globals.css';
 const notoSans = Noto_Sans_SC({ variable: '--font-app', subsets: ['latin'], weight: ['400', '500', '600', '700'] });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('http://localhost:3000'),
+  metadataBase: new URL('https://kiseki-orbment-solver.maodlife.chatgpt.site'),
   title: 'Orbment · 导力器配装求解器',
   description: '《空之轨迹 the 2nd》本地导力器与魔法约束求解工具',
   icons: { icon: '/favicon.svg' },
