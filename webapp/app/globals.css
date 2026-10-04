@@ -120,3 +120,5 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: clamp(24px, 3
 .resource-quantity > span { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 .character-equipment { margin-top: 16px; }
 @media (max-width: 620px) { .equip-button { margin-right: 10px; } .build-card-header .build-summary { padding: 12px 10px; gap: 8px; } }
+
+.attempt-time{display:flex;align-items:center;gap:12px;margin-top:14px;font-size:13px}.attempt-time input{width:92px}.time-error{color:#bd5542}.solve-actions{display:flex;align-items:center;gap:12px}.solve-actions .solve-button{flex:1}.solver-progress{border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:18px;background:var(--card)}.solver-progress h2{font-size:18px}.search-progress-metrics{display:flex;gap:30px;flex-wrap:wrap;margin-top:18px}.solver-progress progress{width:100%;height:6px;margin-top:18px;accent-color:#8eac74}@media(max-width:600px){.search-progress-metrics{gap:18px}.solve-actions{flex-wrap:wrap}.solver-progress{padding:18px}}

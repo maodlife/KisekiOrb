@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createDefaultPlayerState } from '../lib/default-data.ts';
 import { emptyElements, type Build, type Character, type GameData, type PlayerState, type SolveRequest } from '../lib/domain.ts';
 import { equipBuild, getAvailableQuartzCount, getEquippedCounts, normalizeEquipment, removeQuartzFromEquipment, unequipQuartz } from '../lib/equipment.ts';
-import { solveOrbment } from '../lib/solver.ts';
+import { solveOrbment } from './solver-api.ts';
 
 function fixture() {
   const character = (id: string): Character => ({ id, name: id, centralSlotId: 9,
@@ -38,26 +38,26 @@ function request(game: GameData, player: PlayerState, characterId: string, mode:
     mustHaveArts: ['tear'], rankingPreset: 'resource', maxResults: 20 };
 }
 
-test('equipping reserves inventory, prevents teammate solving, and unequipping restores it', () => {
+test('equipping reserves inventory, prevents teammate solving, and unequipping restores it', async () => {
   const { game, player } = fixture();
-  const solved = solveOrbment(request(game, player, 'alice'));
+  const solved = (await solveOrbment(request(game, player, 'alice')));
   assert.equal(solved.status, 'solved');
   const equipped = equip(player, game, 'alice', solved.builds[0]);
   assert.equal(getAvailableQuartzCount(equipped.resources, equipped.equipment, 'water'), 0);
   assert.equal(equipped.resources.water.ownedCount, 1);
   assert.deepEqual(getEquippedCounts(equipped.equipment), { water: 1 });
-  assert.equal(solveOrbment(request(game, equipped, 'bob')).status, 'no_solution');
+  assert.equal((await solveOrbment(request(game, equipped, 'bob'))).status, 'no_solution');
   const released = unequipQuartz(equipped, 'alice');
   assert.equal(getAvailableQuartzCount(released.resources, released.equipment, 'water'), 1);
-  assert.equal(solveOrbment(request(game, released, 'bob')).status, 'solved');
+  assert.equal((await solveOrbment(request(game, released, 'bob'))).status, 'solved');
   assert.equal(getEquippedCounts(equipped.equipment).water, 1, 'previous state remains immutable');
 });
 
-test('owned modes retain teammate copies for planning, but actual equip rejects double booking atomically', () => {
+test('owned modes retain teammate copies for planning, but actual equip rejects double booking atomically', async () => {
   const { game, player } = fixture();
   const equipped = equip(player, game, 'alice', build({ 9: 'water' }));
   for (const mode of ['owned_only', 'owned_plus_shop'] as const) {
-    const planned = solveOrbment(request(game, equipped, 'bob', mode));
+    const planned = (await solveOrbment(request(game, equipped, 'bob', mode)));
     assert.equal(planned.status, 'solved');
     const before = JSON.stringify(equipped);
     const outcome = equipBuild(equipped, game.characters[1], game.quartz, planned.builds[0]);
@@ -67,10 +67,10 @@ test('owned modes retain teammate copies for planning, but actual equip rejects 
   }
 });
 
-test('the current character can reuse its own gear and repeated equip does not consume copies', () => {
+test('the current character can reuse its own gear and repeated equip does not consume copies', async () => {
   const { game, player } = fixture();
   const equipped = equip(player, game, 'alice', build({ 9: 'water' }));
-  const result = solveOrbment(request(game, equipped, 'alice'));
+  const result = (await solveOrbment(request(game, equipped, 'alice')));
   assert.equal(result.status, 'solved');
   const again = equip(equipped, game, 'alice', result.builds[0]);
   assert.deepEqual(getEquippedCounts(again.equipment), { water: 1 });
@@ -78,7 +78,7 @@ test('the current character can reuse its own gear and repeated equip does not c
   assert.equal(getAvailableQuartzCount(again.resources, again.equipment, 'water', 'alice'), 1);
 });
 
-test('two owned copies permit two characters, and single unequip only releases that slot', () => {
+test('two owned copies permit two characters, and single unequip only releases that slot', async () => {
   const { game, player } = fixture();
   player.resources.water.ownedCount = 2;
   const alice = equip(player, game, 'alice', build({ 9: 'water', 13: 'wind' }));
@@ -91,7 +91,7 @@ test('two owned copies permit two characters, and single unequip only releases t
   assert.equal(released.resources.water.ownedCount, 2);
 });
 
-test('replacing a loadout releases old gear without affecting a teammate', () => {
+test('replacing a loadout releases old gear without affecting a teammate', async () => {
   const { game, player } = fixture();
   const first = equip(player, game, 'alice', build({ 9: 'water' }));
   const replacement = equip(first, game, 'alice', build({ 42: 'wind' }));
@@ -100,25 +100,25 @@ test('replacing a loadout releases old gear without affecting a teammate', () =>
   assert.deepEqual(replacement.equipment.bob, player.equipment.bob);
 });
 
-test('shop plans with missing inventory are blocked until owned stock is manually increased', () => {
+test('shop plans with missing inventory are blocked until owned stock is manually increased', async () => {
   const { game, player } = fixture();
   player.resources.water.ownedCount = 0;
   player.resources.water.shopAvailable = true;
   player.resources.water.shopPurchaseLimit = 2;
   player.resources.water.shopPrice = 100;
-  const candidate = solveOrbment(request(game, player, 'alice', 'owned_plus_shop')).builds[0];
+  const candidate = (await solveOrbment(request(game, player, 'alice', 'owned_plus_shop'))).builds[0];
   assert.equal(candidate.purchases.water, 1);
   const before = JSON.stringify(player);
   assert.equal(equipBuild(player, game.characters[0], game.quartz, candidate).ok, false);
   assert.equal(JSON.stringify(player), before);
-  assert.equal(solveOrbment(request(game, player, 'alice')).status, 'no_solution', 'available mode does not use shop stock');
+  assert.equal((await solveOrbment(request(game, player, 'alice'))).status, 'no_solution', 'available mode does not use shop stock');
   const stocked = { ...player, resources: { ...player.resources, water: { ...player.resources.water, ownedCount: 1 } } };
   const equipped = equip(stocked, game, 'alice', candidate);
   assert.equal(equipped.resources.water.ownedCount, 1);
   assert.equal(equipped.resources.water.shopPurchaseLimit, 2);
 });
 
-test('slot upgrades apply only when the entire equipment operation succeeds', () => {
+test('slot upgrades apply only when the entire equipment operation succeeds', async () => {
   const { game, player } = fixture();
   const candidate = build({ 42: 'advanced' }, { 9: 1, 13: 1, 42: 2 });
   player.resources.advanced.ownedCount = 0;
@@ -130,18 +130,18 @@ test('slot upgrades apply only when the entire equipment operation succeeds', ()
   assert.equal(player.slotLevels.alice['42'], 1);
 });
 
-test('available mode handles remaining copies and overbooked input without negative quantities', () => {
+test('available mode handles remaining copies and overbooked input without negative quantities', async () => {
   const { game, player } = fixture();
   player.equipment.bob[9] = 'water';
   player.resources.water.ownedCount = 2;
-  assert.equal(solveOrbment(request(game, player, 'alice')).status, 'solved');
+  assert.equal((await solveOrbment(request(game, player, 'alice'))).status, 'solved');
   player.equipment.bob[13] = 'water';
-  assert.equal(solveOrbment(request(game, player, 'alice')).status, 'no_solution');
+  assert.equal((await solveOrbment(request(game, player, 'alice'))).status, 'no_solution');
   player.resources.water.ownedCount = 0;
   assert.equal(getAvailableQuartzCount(player.resources, player.equipment, 'water'), 0);
 });
 
-test('equipment normalization removes dangling records and overbooking without creating stock', () => {
+test('equipment normalization removes dangling records and overbooking without creating stock', async () => {
   const { game, player } = fixture();
   const normalized = normalizeEquipment(game, player.resources, { alice: { 9: 'water', 13: 'deleted', 99: 'wind' }, bob: { 9: 'water', 13: 'wind' }, deleted: { 9: 'water' } });
   assert.deepEqual(normalized, { alice: { 9: 'water', 13: null, 42: null }, bob: { 9: null, 13: 'wind', 42: null } });
@@ -149,7 +149,7 @@ test('equipment normalization removes dangling records and overbooking without c
   assert.equal(player.equipment.alice[9], null);
 });
 
-test('deleting quartz removes all its equipment records and preserves other gear', () => {
+test('deleting quartz removes all its equipment records and preserves other gear', async () => {
   const { player } = fixture();
   player.equipment.alice = { 9: 'water', 13: 'wind' };
   player.equipment.bob = { 9: 'water' };
@@ -158,7 +158,7 @@ test('deleting quartz removes all its equipment records and preserves other gear
   assert.equal(player.equipment.alice[9], 'water');
 });
 
-test('equip rejects outdated quartz, slot restrictions, duplicate names and line quotas', () => {
+test('equip rejects outdated quartz, slot restrictions, duplicate names and line quotas', async () => {
   const { game, player } = fixture();
   assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 9: 'deleted' })).ok, false);
   game.characters[0].slots[0].restriction = 'fire';

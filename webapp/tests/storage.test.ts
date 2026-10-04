@@ -53,3 +53,16 @@ test('saving and reloading player state retains equipment and availability prefe
     else Reflect.deleteProperty(globalThis, 'window');
   }
 });
+
+test('legacy solve settings gain the default budget while keeping user game state', () => {
+  const player = createDefaultPlayerState(); delete player.lastSolver.timeoutSeconds; player.lastSolver.rankingPreset = 'resource';
+  const before = JSON.stringify(player); const normalized = normalizePlayerState(DEFAULT_GAME_DATA, player);
+  assert.equal(normalized.lastSolver.timeoutSeconds, 10); assert.equal(normalized.lastSolver.rankingPreset, 'extra_arts');
+  assert.deepEqual(normalized.resources, player.resources); assert.deepEqual(normalized.equipment, player.equipment);
+  assert.equal(JSON.stringify(player), before);
+});
+test('time budgets persist across export/import and invalid budgets return to ten seconds', () => {
+  const player = createDefaultPlayerState(); player.lastSolver.timeoutSeconds = 30;
+  assert.equal(normalizePlayerState(DEFAULT_GAME_DATA, JSON.parse(JSON.stringify(player))).lastSolver.timeoutSeconds, 30);
+  player.lastSolver.timeoutSeconds = -1; assert.equal(normalizePlayerState(DEFAULT_GAME_DATA, player).lastSolver.timeoutSeconds, 10);
+});

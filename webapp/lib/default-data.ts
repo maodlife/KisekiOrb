@@ -38,7 +38,8 @@ export function createDefaultPlayerState(gameData: GameData = DEFAULT_GAME_DATA)
       mustHaveArts: gameData.arts.some((item) => item.id === 'art-water-06') && gameData.arts.some((item) => item.id === 'art-time-07')
         ? ['art-water-06', 'art-time-07']
         : [],
-      rankingPreset: 'resource',
+      rankingPreset: 'extra_arts',
+      timeoutSeconds: 10,
     },
   };
 }

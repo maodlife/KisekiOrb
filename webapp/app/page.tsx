@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -14,11 +14,11 @@ import { ART_GROUPS, getArtGroup, groupArtsByFirstElement, type ArtGroupId } fro
 import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
 import { equipBuild, getEquippedCounts, removeQuartzFromEquipment, unequipQuartz } from '@/lib/equipment.ts';
-import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveRequest, type SolveResult } from '@/lib/domain.ts';
+import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type ResourceMode, type SlotPolicy, type SolveRequest, type SolveResult, type SolveProgress } from '@/lib/domain.ts';
 import { compareQuartzBySeriesLevelName, getQuartzDisplayElements, getQuartzSeries } from '@/lib/quartz-series.ts';
 import { getQuartzGroup, groupQuartzForInventory, QUARTZ_GROUPS, type QuartzGroupId } from '@/lib/quartz-groups.ts';
 import { getCentralSlotId } from '@/lib/quartz-rules.ts';
-import SolverWorker from '@/lib/solver.worker.ts?worker';
+import { useOrbmentSolver } from '@/hooks/use-orbment-solver.ts';
 
 import { loadGameData, loadPlayerState, normalizePlayerState, resetLocalData, saveGameData, savePlayerState } from '@/lib/storage.ts';
 
@@ -29,10 +29,6 @@ const VIEW_META: Record<View, { title: string; eyebrow: string }> = {
   inventory: { title: '库存与商店', eyebrow: 'PLAYER RESOURCES' },
   characters: { title: '角色导力器', eyebrow: 'ORBMENT TOPOLOGY' },
   data: { title: '游戏数据', eyebrow: 'LOCAL GAME DATABASE' },
-};
-
-const RANKING_LABELS: Record<RankingPreset, string> = {
-  resource: '最省资源', upgrades: '最少升级', purchases: '最少购买', extra_arts: '最多额外魔法',
 };
 
 const makePolicies = (character: Character, player: PlayerState): Record<number, SlotPolicy> => Object.fromEntries(character.slots.map((slot) => {
@@ -104,18 +100,16 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [characterId, setCharacterId] = useState(DEFAULT_GAME_DATA.characters[0].id);
   const [resourceMode, setResourceMode] = useState<ResourceMode>('owned_only');
-  const [ranking, setRanking] = useState<RankingPreset>('resource');
+  const [timeoutSeconds, setTimeoutSeconds] = useState('10');
   const [mustHave, setMustHave] = useState<string[]>(['art-water-06', 'art-time-07']);
   const [policies, setPolicies] = useState<Record<number, SlotPolicy>>(() => makePolicies(DEFAULT_GAME_DATA.characters[0], createDefaultPlayerState(DEFAULT_GAME_DATA)));
   const [activeSlot, setActiveSlot] = useState(0);
   const [artSearch, setArtSearch] = useState('');
   const [inventorySearch, setInventorySearch] = useState('');
-  const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
-  const [solving, setSolving] = useState(false);
+  const { result: solveResult, progress: solveProgress, busy: solving, cancelling, elapsedMs: solveElapsed, run, cancel, reset: resetSolver } = useOrbmentSolver();
   const [expandedBuild, setExpandedBuild] = useState(0);
   const [notice, setNotice] = useState('');
-  const solverWorker = useRef<Worker | null>(null);
-  const solveGeneration = useRef(0);
+
 
   useEffect(() => {
     const loadedGame = loadGameData();
@@ -123,28 +117,19 @@ export default function Home() {
     const savedCharacter = loadedGame.characters.find((item) => item.id === loadedPlayer.lastSolver.characterId) ?? loadedGame.characters[0];
     // oxlint-disable-next-line react/react-compiler -- one-time hydration from localStorage
     setGameData(loadedGame); setPlayer(loadedPlayer); setCharacterId(savedCharacter.id);
-    setResourceMode(loadedPlayer.lastSolver.resourceMode); setRanking(loadedPlayer.lastSolver.rankingPreset);
+    setResourceMode(loadedPlayer.lastSolver.resourceMode); setTimeoutSeconds(String(loadedPlayer.lastSolver.timeoutSeconds ?? 10));
     setMustHave(loadedPlayer.lastSolver.mustHaveArts.filter((id) => loadedGame.arts.some((art) => art.id === id)));
     setPolicies(makePolicies(savedCharacter, loadedPlayer)); setActiveSlot(savedCharacter.slots[0]?.id ?? 0); setHydrated(true);
   }, []);
 
-  useEffect(() => () => solverWorker.current?.terminate(), []);
-  useEffect(() => {
-    solveGeneration.current += 1;
-    if (solverWorker.current) {
-      solverWorker.current.terminate();
-      solverWorker.current = null;
-      setSolving(false);
-    }
-    setSolveResult(null);
-  }, [characterId, resourceMode, ranking, mustHave, policies, gameData, player.resources, player.equipment]);
+  useEffect(() => { resetSolver(); }, [characterId, resourceMode, mustHave, policies, gameData, player.resources, player.equipment, resetSolver]);
   useEffect(() => { if (hydrated) saveGameData(gameData); }, [gameData, hydrated]);
   useEffect(() => { if (hydrated) savePlayerState(player); }, [player, hydrated]);
   useEffect(() => {
     if (!hydrated) return;
     // oxlint-disable-next-line react/react-compiler -- persist the latest solver preferences in player state
-    setPlayer((current) => ({ ...current, lastSolver: { characterId, resourceMode, mustHaveArts: mustHave, rankingPreset: ranking } }));
-  }, [characterId, resourceMode, mustHave, ranking, hydrated]);
+    setPlayer((current) => ({ ...current, lastSolver: { characterId, resourceMode, mustHaveArts: mustHave, rankingPreset: 'extra_arts', timeoutSeconds: Number(timeoutSeconds) || 10 } }));
+  }, [characterId, resourceMode, mustHave, timeoutSeconds, hydrated]);
 
   const character = gameData.characters.find((item) => item.id === characterId) ?? gameData.characters[0];
   const quartzNames = useMemo(() => Object.fromEntries(gameData.quartz.map((quartz) => [quartz.id, quartz.name])), [gameData.quartz]);
@@ -155,41 +140,20 @@ export default function Home() {
   const switchCharacter = (id: string) => {
     const next = gameData.characters.find((item) => item.id === id);
     if (!next) return;
-    setCharacterId(id); setPolicies(makePolicies(next, player)); setActiveSlot(next.slots[0]?.id ?? 0); setSolveResult(null);
+    setCharacterId(id); setPolicies(makePolicies(next, player)); setActiveSlot(next.slots[0]?.id ?? 0); resetSolver();
   };
 
   const patchPolicy = (slotId: number, patch: Partial<SlotPolicy>) => setPolicies((current) => ({ ...current, [slotId]: { ...current[slotId], ...patch } }));
   const toggleArt = (id: string) => setMustHave((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
+  const validTime = Number.isInteger(Number(timeoutSeconds)) && Number(timeoutSeconds) >= 1 && Number(timeoutSeconds) <= 120;
   const runSolver = () => {
-    setSolving(true); setSolveResult(null);
-    solverWorker.current?.terminate();
-    const generation = ++solveGeneration.current;
-    let startedWorker: Worker | null = null;
-
-    try {
-      const worker = new SolverWorker();
-      const request: SolveRequest = { character, quartz: gameData.quartz, arts: gameData.arts, resources: player.resources, equipment: player.equipment, resourceMode, slotPolicies: policies, mustHaveArts: mustHave, rankingPreset: ranking, maxResults: 20 };
-      startedWorker = worker; solverWorker.current = worker;
-      worker.onmessage = (event: MessageEvent<SolveResult>) => {
-        if (solverWorker.current !== worker || solveGeneration.current !== generation) return;
-        solverWorker.current = null; worker.terminate();
-        setSolveResult(event.data); setExpandedBuild(0); setSolving(false);
-        window.setTimeout(() => document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 20);
-      };
-      worker.onerror = () => {
-        if (solverWorker.current !== worker || solveGeneration.current !== generation) return;
-        solverWorker.current = null; worker.terminate();
-        setSolveResult({ status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '求解器启动失败，请刷新页面后重试。' });
-        setSolving(false);
-      };
-      worker.postMessage(request);
-    } catch {
-      startedWorker?.terminate();
-      if (solverWorker.current === startedWorker) solverWorker.current = null;
-      setSolveResult({ status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '当前浏览器无法启动后台求解器。' });
-      setSolving(false);
-    }
+    if (!validTime || solving) return;
+    setExpandedBuild(0);
+    const request: SolveRequest = { character, quartz: gameData.quartz, arts: gameData.arts, resources: player.resources,
+      equipment: player.equipment, resourceMode, slotPolicies: policies, mustHaveArts: mustHave,
+      rankingPreset: 'extra_arts', maxResults: 20, timeoutMs: Number(timeoutSeconds) * 1000 };
+    run(request);
   };
 
   const updateResource = (id: string, patch: Partial<PlayerState['resources'][string]>) => setPlayer((current) => {
@@ -200,7 +164,7 @@ export default function Home() {
   const applyBuild = (build: Build) => {
     const outcome = equipBuild(player, character, gameData.quartz, build);
     if (!outcome.ok) { setNotice(outcome.message); return; }
-    setPlayer(outcome.player); setPolicies(makePolicies(character, outcome.player)); setSolveResult(null);
+    setPlayer(outcome.player); setPolicies(makePolicies(character, outcome.player)); resetSolver();
     setNotice(`已为「${character.name}」装备方案${build.metrics.upgradeSteps > 0 ? '，并更新槽位等级' : ''}。`);
   };
 
@@ -221,7 +185,7 @@ export default function Home() {
     setGameData((current) => ({ ...current, characters: [...current.characters, newCharacter] }));
     setPlayer((current) => ({ ...current, slotLevels: { ...current.slotLevels, [newCharacter.id]: levels }, equipment: { ...current.equipment, [newCharacter.id]: Object.fromEntries(newCharacter.slots.map((slot) => [slot.id, null])) } }));
     setCharacterId(newCharacter.id); setPolicies(makePolicies(newCharacter, { ...player, slotLevels: { ...player.slotLevels, [newCharacter.id]: levels } }));
-    setActiveSlot(newCharacter.slots[0].id); setSolveResult(null); setNotice(`已创建角色「${newCharacter.name}」，可以继续编辑槽位与线路。`);
+    setActiveSlot(newCharacter.slots[0].id); resetSolver(); setNotice(`已创建角色「${newCharacter.name}」，可以继续编辑槽位与线路。`);
   };
 
   const exportAll = () => {
@@ -238,14 +202,14 @@ export default function Home() {
       setGameData(parsed.gameData); setPlayer(importedPlayer);
       const nextCharacter = parsed.gameData.characters.find((item) => item.id === importedPlayer.lastSolver.characterId) ?? parsed.gameData.characters[0];
       setCharacterId(nextCharacter.id); setPolicies(makePolicies(nextCharacter, importedPlayer)); setMustHave(importedPlayer.lastSolver.mustHaveArts);
-      setResourceMode(importedPlayer.lastSolver.resourceMode); setRanking(importedPlayer.lastSolver.rankingPreset); setActiveSlot(nextCharacter.slots[0]?.id ?? 0); setSolveResult(null); setNotice('导入成功，库存与装备记录已自动保存。');
+      setResourceMode(importedPlayer.lastSolver.resourceMode); setTimeoutSeconds(String(importedPlayer.lastSolver.timeoutSeconds ?? 10)); setActiveSlot(nextCharacter.slots[0]?.id ?? 0); resetSolver(); setNotice('导入成功，库存与装备记录已自动保存。');
     } catch { setNotice('导入失败：文件不是有效的 Orbment 备份。'); }
     event.target.value = '';
   };
 
   const resetAll = () => {
-    resetLocalData(); const freshGame = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)) as GameData; const freshPlayer = createDefaultPlayerState(freshGame);
-    setGameData(freshGame); setPlayer(freshPlayer); setCharacterId(freshGame.characters[0].id); setPolicies(makePolicies(freshGame.characters[0], freshPlayer)); setMustHave(freshPlayer.lastSolver.mustHaveArts); setSolveResult(null); setNotice('已恢复内置截图数据。');
+    setTimeoutSeconds('10'); resetLocalData(); const freshGame = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)) as GameData; const freshPlayer = createDefaultPlayerState(freshGame);
+    setGameData(freshGame); setPlayer(freshPlayer); setCharacterId(freshGame.characters[0].id); setPolicies(makePolicies(freshGame.characters[0], freshPlayer)); setMustHave(freshPlayer.lastSolver.mustHaveArts); resetSolver(); setNotice('已恢复内置截图数据。');
   };
 
   return <main className="app-shell">
@@ -287,11 +251,10 @@ export default function Home() {
               <p className="helper">{resourceMode === 'available_only' ? '排除队友装备的回路；当前角色的装备可复用。' : '按总拥有数规划，包含队友装备的回路；实际装备时仍需有可用库存。'}</p>
             </section>
             <ArtsPicker arts={gameData.arts} mustHave={mustHave} toggleArt={toggleArt} clearSelection={() => setMustHave([])} search={artSearch} setSearch={setArtSearch} />
-            <section className="panel compact-panel"><p className="step">04 · 优化目标</p><NativeSelect className="wide-select" value={ranking} onChange={(event) => setRanking(event.target.value as RankingPreset)}>{Object.entries(RANKING_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect><p className="helper">使用稳定字典序排序，优先级清晰可解释。</p></section>
-            <p className="helper">刃、盾、理系各限一颗／结晶线，中央插槽单独计数。</p>
-            <button className="solve-button" disabled={solving || mustHave.length === 0} onClick={runSolver}><Sparkles size={18} />{solving ? '正在搜索合法配置…' : '开始求解'}<span>最多 20 组</span></button>
+            <section className="panel compact-panel"><p className="step">04 · 求解目标与时间</p><h3>尽可能多的额外魔法</h3><label className="attempt-time" htmlFor="attempt-seconds">尝试时间 <Input id="attempt-seconds" type="number" min={1} max={120} step={1} value={timeoutSeconds} disabled={solving} onChange={(event) => setTimeoutSeconds(event.target.value)} aria-describedby="attempt-time-help" /><span>秒</span></label><p id="attempt-time-help" className="helper">默认 10 秒，可设 1–120 秒。先找合法配装，再持续增加额外魔法；到时保留最佳方案。首次下载与初始化不计入时间。</p>{!validTime && <p className="helper time-error" role="alert">请输入 1–120 的整数。</p>}<p className="helper">升级、购买和属性值用于比较候选，不保证这些指标最优。</p></section>
+            <div className="solve-actions"><button className="solve-button" disabled={solving || mustHave.length === 0 || !validTime} onClick={runSolver}><Sparkles size={18} />{solving ? '正在尝试改善配装…' : '开始求解'}<span>{timeoutSeconds || '10'} 秒</span></button>{solving && <Button variant="outline" disabled={cancelling} onClick={cancel}>{cancelling ? '正在停止…' : '取消'}</Button>}</div>
         </div>
-        <ResultsSection result={solveResult} expanded={expandedBuild} setExpanded={setExpandedBuild} character={character} policies={policies} quartzNames={quartzNames} artById={artById} mustHave={mustHave} onEquip={applyBuild} />
+        <ResultsSection progress={solveProgress} elapsedMs={solveElapsed} cancelling={cancelling} result={solveResult} expanded={expandedBuild} setExpanded={setExpandedBuild} character={character} policies={policies} quartzNames={quartzNames} artById={artById} mustHave={mustHave} onEquip={applyBuild} />
       </>}
 
       {view === 'inventory' && <InventoryView gameData={gameData} player={player} search={inventorySearch} setSearch={setInventorySearch} updateResource={updateResource} setPlayer={setPlayer} />}
@@ -329,12 +292,13 @@ function ArtsPicker({ arts, mustHave, toggleArt, clearSelection, search, setSear
   </section>;
 }
 
-function ResultsSection({ result, expanded, setExpanded, character, policies, quartzNames, artById, mustHave, onEquip }: { result: SolveResult | null; expanded: number; setExpanded: (index: number) => void; character: Character; policies: Record<number, SlotPolicy>; quartzNames: Record<string, string>; artById: Record<string, GameData['arts'][number]>; mustHave: string[]; onEquip: (build: Build) => void }) {
+function ResultsSection({ progress, elapsedMs, cancelling, result, expanded, setExpanded, character, policies, quartzNames, artById, mustHave, onEquip }: { progress: SolveProgress | null; elapsedMs: number; cancelling: boolean; result: SolveResult | null; expanded: number; setExpanded: (index: number) => void; character: Character; policies: Record<number, SlotPolicy>; quartzNames: Record<string, string>; artById: Record<string, GameData['arts'][number]>; mustHave: string[]; onEquip: (build: Build) => void }) {
   return <section id="results" className="results-section">
-    {!result && <div className="results-preview"><div><p className="step">求解结果</p><h2>准备就绪</h2><p>选择目标魔法后，系统会同时搜索槽位升级、回路配装与必要购买。</p></div><div className="preview-metrics"><Metric value="7" label="物理槽位" /><Metric value={character.lines.length} label="条连线" /><Metric value="20" label="最多方案" /></div></div>}
-    {result && result.status !== 'solved' && <div className="empty-result"><span><X size={22} /></span><div><p className="step">{result.status === 'no_solution' ? '没有合法方案' : '求解失败'}</p><h2>{result.message}</h2><p>{result.status === 'no_solution' ? '建议允许更多槽位升级、切换到商店模式，或减少必须魔法。' : '请检查错误提示后重试；此结果不代表当前配置无解。'}</p></div></div>}
-    {result?.status === 'solved' && <><div className="results-title"><div><p className="step">求解结果</p><h2>{result.message}</h2></div><span>{result.nodesVisited.toLocaleString()} 个搜索节点</span></div><p className="helper">装备将替换当前配装并应用方案的槽位等级。库存不足时，请先手动补充库存或让队友脱下，再重新求解。</p><div className="build-list">{result.builds.map((build, index) => <article key={index} className={`build-card ${expanded === index ? 'expanded' : ''}`}>
-      <div className="build-card-header"><button className="build-summary" onClick={() => setExpanded(index)}><span className="build-rank">#{index + 1}</span><div><b>{build.metrics.upgradeSteps === 0 && build.metrics.purchasedCount === 0 ? '无需额外资源' : `${build.metrics.upgradeSteps} 步升级 · ${build.metrics.purchasedCount} 颗购买`}</b><small>{build.metrics.extraArtsCount} 个额外魔法 · ATS +{build.metrics.ats} · SPD +{build.metrics.spd}</small></div><div className="summary-metrics"><Metric value={build.metrics.purchaseCost.toLocaleString()} label="购买成本" /><ChevronDown size={18} /></div></button><Button className="equip-button" onClick={() => onEquip(build)} aria-label={`将方案 ${index + 1} 装备给${character.name}`}><Gem size={15} />装备</Button></div>
+    {progress && <div className="solver-progress" role="status" aria-live="polite"><div><p className="step">{progress.phase === 'initializing' ? '准备求解器' : '正在尝试'}</p><h2>{cancelling ? '正在停止，保留当前最佳方案…' : progress.message}</h2></div>{progress.phase === 'searching' && <><div className="search-progress-metrics"><Metric value={progress.bestExtraArtsCount ?? '—'} label="最佳额外魔法" /><Metric value={progress.target} label="本次要求至少" /><Metric value={`${(elapsedMs / 1000).toFixed(1)} / ${progress.budgetMs / 1000} 秒`} label="尝试时间" /></div><progress value={elapsedMs} max={progress.budgetMs} aria-label="已使用尝试时间" /></>}</div>}
+    {!result && !progress && <div className="results-preview"><div><p className="step">求解结果</p><h2>准备就绪</h2><p>选择目标魔法后，系统会先寻找满足全部目标的配装，再在尝试时间内持续增加额外魔法。</p></div><div className="preview-metrics"><Metric value={character.slots.length} label="物理槽位" /><Metric value={character.lines.length} label="条连线" /><Metric value="10 秒" label="默认尝试时间" /></div></div>}
+    {result && result.status !== 'solved' && <div className="empty-result"><span><X size={22} /></span><div><p className="step">{result.status === 'no_solution' ? '没有合法方案' : result.status === 'cancelled' ? '已取消' : result.status === 'unknown' ? '本次尝试未找到方案' : '求解失败'}</p><h2>{result.message}</h2><p>{result.status === 'no_solution' ? '建议允许更多槽位升级、切换到商店模式，或减少必须魔法。' : result.status === 'unknown' ? '可以增加尝试时间，或调整目标与资源后重试；本次尝试不代表无解。' : result.status === 'cancelled' ? '可以调整条件或再次开始求解。' : '请检查错误提示后重试；此结果不代表当前配置无解。'}</p></div></div>}
+    {result?.status === 'solved' && <><div className="results-title"><div><p className="step">求解结果</p><h2>{result.message}</h2></div><span>{result.attempts} 次求解 · {(result.elapsedMs / 1000).toFixed(2)} 秒</span></div><p className="helper">装备将替换当前配装并应用方案的槽位等级。库存不足时，请先手动补充库存或让队友脱下，再重新求解。</p><p className="helper">以下为持续改善过程中找到的候选，额外魔法更多的方案排在前面；不是全部配装的前 20 名。</p><div className="build-list">{result.builds.map((build, index) => <article key={index} className={`build-card ${expanded === index ? 'expanded' : ''}`}>
+      <div className="build-card-header"><button className="build-summary" onClick={() => setExpanded(index)}><span className="build-rank">#{index + 1}</span><div><b>{build.metrics.upgradeSteps === 0 && build.metrics.purchasedCount === 0 ? '无需额外资源' : `${build.metrics.upgradeSteps} 步升级 · ${build.metrics.purchasedCount} 颗购买`}</b><small>{build.metrics.extraArtsCount} 个额外魔法 · ATS +{build.metrics.ats} · SPD +{build.metrics.spd}</small></div><div className="summary-metrics"><Metric value={build.metrics.purchaseCost.toLocaleString()} label="购买成本" /><ChevronDown size={18} /></div></button><Button className="equip-button" disabled={Boolean(progress)} onClick={() => onEquip(build)} aria-label={`将方案 ${index + 1} 装备给${character.name}`}><Gem size={15} />装备</Button></div>
       {expanded === index && <BuildDetails build={build} character={character} policies={policies} quartzNames={quartzNames} artById={artById} mustHave={mustHave} />}
     </article>)}</div></>}
   </section>;

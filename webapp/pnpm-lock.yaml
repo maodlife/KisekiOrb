@@ -65,6 +65,9 @@ importers:
       vinext:
         specifier: 1.0.0-beta.5
         version: 1.0.0-beta.5(@vitejs/plugin-react@6.0.2(vite@8.0.13(@types/node@22.19.19)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.51.2)))(@vitejs/plugin-rsc@0.5.26(react-dom@19.2.6(react@19.2.6))(react-server-dom-webpack@19.2.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(webpack@5.110.1(esbuild@0.27.3)(lightningcss@1.33.0)(postcss@8.5.26)))(react@19.2.6)(vite@8.0.13(@types/node@22.19.19)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.51.2)))(react-dom@19.2.6(react@19.2.6))(react-server-dom-webpack@19.2.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(webpack@5.110.1(esbuild@0.27.3)(lightningcss@1.33.0)(postcss@8.5.26)))(react@19.2.6)(vite@8.0.13(@types/node@22.19.19)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.51.2))
+      z3-solver:
+        specifier: 5.2.0
+        version: 5.2.0
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: 1.37.1
@@ -93,6 +96,9 @@ importers:
       '@vitejs/plugin-rsc':
         specifier: 0.5.26
         version: 0.5.26(react-dom@19.2.6(react@19.2.6))(react-server-dom-webpack@19.2.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(webpack@5.110.1(esbuild@0.27.3)(lightningcss@1.33.0)(postcss@8.5.26)))(react@19.2.6)(vite@8.0.13(@types/node@22.19.19)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.51.2))
+      esbuild:
+        specifier: 0.27.3
+        version: 0.27.3
       oxfmt:
         specifier: 0.61.0
         version: 0.61.0
@@ -1649,6 +1655,9 @@ packages:
   ast-types@0.16.1:
     resolution: {integrity: sha512-6t10qk83GOG8p0vKmaCr8eiilZwO171AvbROMtvvNiwrTly62t+7XkA8RdIIVbpMhCASAsxgAzdRSwh6nw/5Dg==}
     engines: {node: '>=4'}
+
+  async-mutex@0.3.2:
+    resolution: {integrity: sha512-HuTK7E7MT7jZEh1P9GtRW9+aTWiDWWi9InbZ5hjxrnRa39KS4BW04+xLBhYNS2aXhHUIKZSw3gj4Pn1pj+qGAA==}
 
   atomically@1.7.0:
     resolution: {integrity: sha512-Xcz9l0z7y9yQ9rdDaxlmaI4uJHf/T8g9hOEzJcsEqX2SjCj4J20uK7+ldkDHMbpJDK76wF7xEIgxc/vSlsfw5w==}
@@ -3491,6 +3500,10 @@ packages:
   youch@4.1.0-beta.10:
     resolution: {integrity: sha512-rLfVLB4FgQneDr0dv1oddCVZmKjcJ6yX6mS4pU82Mq/Dt9a3cLZQ62pDBL4AUO+uVrCvtWz3ZFUL2HFAFJ/BXQ==}
 
+  z3-solver@5.2.0:
+    resolution: {integrity: sha512-0mGfrkwV/3zKGLy+EPWlHGORWMVZ8BsaiVYxVxuztk28YHRlD1XO0R7Op7g1nc6JX6kG2b8mHwXTuxSFnYQvww==}
+    engines: {node: '>=16'}
+
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
@@ -4729,6 +4742,10 @@ snapshots:
       tslib: 2.8.1
 
   ast-types@0.16.1:
+    dependencies:
+      tslib: 2.8.1
+
+  async-mutex@0.3.2:
     dependencies:
       tslib: 2.8.1
 
@@ -6493,6 +6510,10 @@ snapshots:
       '@speed-highlight/core': 1.2.24
       cookie: 1.1.1
       youch-core: 0.3.3
+
+  z3-solver@5.2.0:
+    dependencies:
+      async-mutex: 0.3.2
 
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:

@@ -1,266 +1,194 @@
+import type { Bool, Model, init } from 'z3-solver';
 import { getQuartzSeries } from './quartz-series.ts';
 import { getEquippedCounts } from './equipment.ts';
-import { getCentralSlotId, getQuartzLineType, type QuartzLineType } from './quartz-rules.ts';
-import {
-  ELEMENTS,
-  emptyElements,
-  type Art,
-  type Build,
-  type ElementKey,
-  type ElementValues,
-  type Quartz,
-  type SolveRequest,
-  type SolveResult,
-} from './domain.ts';
+import { getCentralSlotId, getQuartzLineType } from './quartz-rules.ts';
+import { ELEMENTS as elements, type Quartz, type Slot, type SolveRequest, type SolveResult, type SolveProgress, type SolveStopReason, type Build, type ElementValues } from './domain.ts';
+export type SolverApi = Pick<Awaited<ReturnType<typeof init>>, 'Context'>;
+type EquivalentGroup = { slots: Slot[]; costs: (number | null)[]; memberships: number[] };
+export type SolveOptions = { signal?: AbortSignal; onCandidate?: (result: SolveResult) => void; onProgress?: (progress: SolveProgress) => void };
+const nameKey = (q: Quartz) => q.name.trim().normalize('NFKC').toLocaleLowerCase('zh-CN') || q.id;
+const level = (q: Quartz) => q.quartzLevel ?? 1;
 
-type Candidate = Quartz | null;
-
-function requiredQuartzLevel(quartz: Quartz) {
-  return quartz.quartzLevel ?? 1;
+export function failedSolveResult(budgetMs: number, message: string): SolveResult {
+  return { status: 'invalid_request', builds: [], attempts: 0, elapsedMs: 0, budgetMs, stopReason: 'invalid_request', extraArtsOptimal: false, improvements: [], message };
+}
+function validateRequest(request: SolveRequest): string | null {
+  if (!request.mustHaveArts.length) return '请至少选择一个必须魔法。';
+  if (request.mustHaveArts.some(id => !request.arts.some(a => a.id === id))) return '请求中包含不存在的魔法。';
+  const center = getCentralSlotId(request.character);
+  const ids = new Set(request.character.slots.map(s => s.id));
+  if (center !== null && !ids.has(center)) return '中央插槽引用了不存在的物理槽位，请检查角色导力器设置。';
+  if (ids.size !== request.character.slots.length || request.character.lines.some(line => line.slots.some(id => !ids.has(id)))) return '导力器槽位或线路引用无效，请检查角色设置。';
+  if (request.timeoutMs != null && (!Number.isFinite(request.timeoutMs) || request.timeoutMs <= 0)) return '尝试时间必须大于零。';
+  if (request.quartz.some(q => elements.some(e => !Number.isInteger(q.elements[e]) || q.elements[e] < 0)) || request.arts.some(a => elements.some(e => !Number.isInteger(a.requirements[e]) || a.requirements[e] < 0))) return '回路元素值和魔法需求必须是非负整数。';
+  if (request.character.slots.some(s => !request.slotPolicies[s.id])) return '缺少槽位策略，请重新选择角色。';
+  return null;
 }
 
-function equipNameKey(quartz: Quartz) {
-  return quartz.name.trim().normalize('NFKC').toLocaleLowerCase('zh-CN') || quartz.id;
-}
-
-function satisfies(total: ElementValues, requirement: ElementValues) {
-  return ELEMENTS.every((element) => total[element] >= requirement[element]);
-}
-
-function addElements(target: ElementValues, values: ElementValues) {
-  for (const element of ELEMENTS) target[element] += values[element];
-}
-
-function availableCount(request: SolveRequest, quartzId: string, teammateCounts: Record<string, number>) {
-  const resource = request.resources[quartzId];
-  if (!resource) return 0;
-  if (request.resourceMode === 'available_only') return Math.max(0, resource.ownedCount - (teammateCounts[quartzId] ?? 0));
-  if (request.resourceMode === 'owned_only') return Math.max(0, resource.ownedCount);
-  if (!resource.shopAvailable) return Math.max(0, resource.ownedCount);
-  const purchasable = resource.shopPurchaseLimit == null ? request.character.slots.length : Math.max(0, resource.shopPurchaseLimit);
-  return Math.max(0, resource.ownedCount) + purchasable;
-}
-
-function totalsFor(request: SolveRequest, assignments: Record<number, string | null>, quartzById: Map<string, Quartz>) {
-  const totals: Record<string, ElementValues> = {};
-  for (const line of request.character.lines) {
-    const value = emptyElements();
-    for (const slotId of line.slots) {
-      const quartzId = assignments[slotId];
-      if (quartzId) addElements(value, quartzById.get(quartzId)!.elements);
-    }
-    totals[line.id] = value;
-  }
-  return totals;
-}
-
-function buildFromAssignment(request: SolveRequest, assignments: Record<number, string | null>, quartzById: Map<string, Quartz>, artById: Map<string, Art>): Build | null {
-  const lineTotals = totalsFor(request, assignments, quartzById);
-  const artWitness: Record<string, string> = {};
-  const unlockedArts: string[] = [];
-  for (const art of request.arts) {
-    const witness = request.character.lines.find((line) => satisfies(lineTotals[line.id], art.requirements));
-    if (witness) {
-      unlockedArts.push(art.id);
-      artWitness[art.id] = witness.id;
-    }
-  }
-  if (request.mustHaveArts.some((id) => !artWitness[id] || !artById.has(id))) return null;
-
-  const usage: Record<string, number> = {};
-  const slotFinalLevels: Record<number, number> = {};
-  let upgradeSteps = 0;
-  let upgradedSlotCount = 0;
-  let ats = 0;
-  let spd = 0;
-  const equippedNames = new Set<string>();
+// Swap-equivalent physical slots share variables; central exemptions stay separate.
+function equivalentGroups(request: SolveRequest, quartz: Quartz[], available: (q: Quartz) => number) {
+  const lines = request.character.lines;
+  const ids = new Set(request.character.slots.map(s => s.id));
+  for (const line of lines) for (const id of line.slots) if (!ids.has(id)) throw new Error(`线路包含不存在的槽位 ${id}`);
+  const groups = new Map<string, EquivalentGroup>();
+  const center = getCentralSlotId(request.character);
   for (const slot of request.character.slots) {
-    const quartzId = assignments[slot.id];
-    const quartz = quartzId ? quartzById.get(quartzId)! : null;
     const policy = request.slotPolicies[slot.id];
-    const finalLevel = quartz ? Math.max(policy.currentLevel, requiredQuartzLevel(quartz)) : policy.currentLevel;
-    slotFinalLevels[slot.id] = finalLevel;
-    if (finalLevel > policy.currentLevel) {
-      upgradedSlotCount += 1;
-      upgradeSteps += finalLevel - policy.currentLevel;
-    }
-    if (quartz) {
-      const nameKey = equipNameKey(quartz);
-      if (equippedNames.has(nameKey)) return null;
-      equippedNames.add(nameKey);
-      usage[quartz.id] = (usage[quartz.id] ?? 0) + 1;
-      ats += quartz.stats.ats ?? 0;
-      spd += quartz.stats.spd ?? 0;
-    }
+    const costs = quartz.map(q => !available(q) || level(q) > (policy.allowUpgrade ? policy.maxLevel : policy.currentLevel)
+      || (slot.restriction && getQuartzSeries(q) !== slot.restriction) ? null : Math.max(0, level(q) - policy.currentLevel));
+    const memberships = lines.map(line => line.slots.filter(id => id === slot.id).length);
+    const signature = JSON.stringify([costs, memberships, slot.id === center]);
+    if (!groups.has(signature)) groups.set(signature, { slots: [], costs, memberships });
+    groups.get(signature)!.slots.push(slot);
   }
-
-  const purchases: Record<string, number> = {};
-  let purchasedCount = 0;
-  let purchaseCost = 0;
-  for (const [quartzId, count] of Object.entries(usage)) {
-    const resource = request.resources[quartzId];
-    const purchase = Math.max(0, count - (resource?.ownedCount ?? 0));
-    if (purchase > 0) {
-      purchases[quartzId] = purchase;
-      purchasedCount += purchase;
-      purchaseCost += purchase * (resource?.shopPrice ?? 0);
-    }
-  }
-
-  return {
-    assignments: { ...assignments }, slotFinalLevels, purchases, lineTotals, artWitness, unlockedArts,
-    metrics: {
-      upgradeSteps, upgradedSlotCount, purchasedCount, purchaseCost,
-      extraArtsCount: unlockedArts.filter((id) => !request.mustHaveArts.includes(id)).length,
-      ats, spd,
-    },
-  };
+  return [...groups.values()];
 }
 
-function rankVector(build: Build, request: SolveRequest) {
-  const m = build.metrics;
-  switch (request.rankingPreset) {
-    case 'upgrades': return [m.upgradeSteps, m.upgradedSlotCount, m.purchasedCount, m.purchaseCost, -m.extraArtsCount, -m.ats, -m.spd];
-    case 'purchases': return [m.purchasedCount, m.purchaseCost, m.upgradeSteps, m.upgradedSlotCount, -m.extraArtsCount, -m.ats, -m.spd];
-    case 'extra_arts': return [-m.extraArtsCount, m.upgradeSteps, m.purchasedCount, m.purchaseCost, -m.ats, -m.spd];
-    default: return [m.upgradeSteps, m.purchasedCount, m.purchaseCost, -m.extraArtsCount, -m.ats, -m.spd];
-  }
-}
-
-function compareBuilds(a: Build, b: Build, request: SolveRequest) {
-  const av = rankVector(a, request);
-  const bv = rankVector(b, request);
-  for (let index = 0; index < av.length; index += 1) if (av[index] !== bv[index]) return av[index] - bv[index];
-  const aKey = request.character.slots.map((slot) => a.assignments[slot.id] ?? '').join('|');
-  const bKey = request.character.slots.map((slot) => b.assignments[slot.id] ?? '').join('|');
-  return aKey.localeCompare(bKey);
-}
-
-export function solveOrbment(request: SolveRequest): SolveResult {
-  if (!request.mustHaveArts.length) return { status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '请至少选择一个必须魔法。' };
-  const quartzById = new Map(request.quartz.map((quartz) => [quartz.id, quartz]));
-  const artById = new Map(request.arts.map((art) => [art.id, art]));
-  if (request.mustHaveArts.some((id) => !artById.has(id))) return { status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '请求中包含不存在的魔法。' };
-  const centralSlotId = getCentralSlotId(request.character);
-  if (centralSlotId !== null && !request.character.slots.some((slot) => slot.id === centralSlotId)) {
-    return { status: 'invalid_request', builds: [], nodesVisited: 0, truncated: false, message: '中央插槽引用了不存在的物理槽位，请检查角色导力器设置。' };
-  }
-
-  const goalArts = request.mustHaveArts.map((id) => artById.get(id)!);
+export async function solveOrbment(api: SolverApi, request: SolveRequest, { onCandidate = () => {}, onProgress = () => {}, signal }: SolveOptions = {}): Promise<SolveResult> {
+  const invalid = validateRequest(request);
+  if (invalid) return failedSolveResult(request.timeoutMs ?? 10_000, invalid);
+  const started = performance.now();
+  const budgetMs = Math.max(1, Math.floor(request.timeoutMs ?? 10_000));
+  const quartz = [...request.quartz].sort((a, b) => a.id.localeCompare(b.id));
+  const slots = request.character.slots;
   const teammateCounts = getEquippedCounts(request.equipment, request.character.id);
-  const goalWeight = Object.fromEntries(ELEMENTS.map((element) => [element, Math.max(...goalArts.map((art) => art.requirements[element]), 0)])) as Record<ElementKey, number>;
-  const candidates: Record<number, Candidate[]> = {};
-  for (const slot of request.character.slots) {
-    const policy = request.slotPolicies[slot.id];
-    const allowedLevel = policy.allowUpgrade ? policy.maxLevel : policy.currentLevel;
-    const list = request.quartz.filter((quartz) => {
-      if (availableCount(request, quartz.id, teammateCounts) <= 0 || requiredQuartzLevel(quartz) > allowedLevel) return false;
-      if (slot.restriction && getQuartzSeries(quartz) !== slot.restriction) return false;
-      return true;
-    });
-    list.sort((a, b) => {
-      const aScore = ELEMENTS.reduce((sum, element) => sum + Math.min(goalWeight[element], a.elements[element]) * (goalWeight[element] ? 1 : .05), 0);
-      const bScore = ELEMENTS.reduce((sum, element) => sum + Math.min(goalWeight[element], b.elements[element]) * (goalWeight[element] ? 1 : .05), 0);
-      const aUpgrade = Math.max(0, requiredQuartzLevel(a) - policy.currentLevel);
-      const bUpgrade = Math.max(0, requiredQuartzLevel(b) - policy.currentLevel);
-      return bScore - aScore || aUpgrade - bUpgrade || a.name.localeCompare(b.name);
-    });
-    candidates[slot.id] = [...list, null];
-  }
-
-  const lineMembership = Object.fromEntries(request.character.slots.map((slot) => [slot.id, request.character.lines.filter((line) => line.slots.includes(slot.id)).length]));
-  const slotOrder = [...request.character.slots].sort((a, b) => candidates[a.id].length - candidates[b.id].length || lineMembership[b.id] - lineMembership[a.id] || a.id - b.id);
-  const maxContribution: Record<number, ElementValues> = {};
-  for (const slot of request.character.slots) {
-    const values = emptyElements();
-    for (const candidate of candidates[slot.id]) if (candidate) for (const element of ELEMENTS) values[element] = Math.max(values[element], candidate.elements[element]);
-    maxContribution[slot.id] = values;
-  }
-
-  const assignments: Record<number, string | null> = Object.fromEntries(request.character.slots.map((slot) => [slot.id, null]));
-  const assigned = new Set<number>();
-  const usage: Record<string, number> = {};
-  const usedNames = new Set<string>();
-  const usedFamilies = new Set<string>();
-  const quartzLineTypes = new Map(request.quartz.map((quartz) => [quartz.id, getQuartzLineType(quartz)]));
-  const lineTypes = request.character.lines.map(() => new Set<QuartzLineType>());
-  const centralTypes = new Set<QuartzLineType>();
-  // The center has a separate quota; other shared slots consume every containing line's quota.
-  const slotTypeScopes = new Map(request.character.slots.map((slot) => [slot.id, slot.id === centralSlotId
-    ? [centralTypes]
-    : request.character.lines.flatMap((line, index) => line.slots.includes(slot.id) ? [lineTypes[index]] : [])]));
-  const builds: Build[] = [];
-  const signatures = new Set<string>();
-  const maxNodes = request.maxNodes ?? 250_000;
-  let nodesVisited = 0;
-  let truncated = false;
-
-  const canStillSatisfy = () => {
-    const currentTotals = totalsFor(request, assignments, quartzById);
-    return goalArts.every((art) => request.character.lines.some((line) => {
-      const optimistic = { ...currentTotals[line.id] };
-      for (const slotId of line.slots) if (!assigned.has(slotId)) addElements(optimistic, maxContribution[slotId]);
-      return satisfies(optimistic, art.requirements);
-    }));
+  const available = (q: Quartz) => {
+    const r = request.resources[q.id];
+    if (!r) return 0;
+    const owned = Math.max(0, r.ownedCount - (request.resourceMode === 'available_only' ? (teammateCounts[q.id] ?? 0) : 0));
+    return request.resourceMode === 'owned_plus_shop' && r.shopAvailable
+      ? owned + (r.shopPurchaseLimit == null ? slots.length : Math.max(0, r.shopPurchaseLimit)) : owned;
   };
-
-  const insertBuild = (build: Build) => {
-    const signature = request.character.slots.map((slot) => build.assignments[slot.id] ?? '').join('|');
-    if (signatures.has(signature)) return;
-    signatures.add(signature);
-    builds.push(build);
-    builds.sort((a, b) => compareBuilds(a, b, request));
-    if (builds.length > request.maxResults) {
-      const removed = builds.pop()!;
-      signatures.delete(request.character.slots.map((slot) => removed.assignments[slot.id] ?? '').join('|'));
+  const groups = equivalentGroups(request, quartz, available);
+  const ctx = new api.Context('orbment');
+  const { Bool, And, Or } = ctx;
+  // Finite Boolean/pseudo-Boolean feasibility checks, with no Optimize objectives.
+  const solver = new ctx.Solver('QF_FD');
+  const interrupt = () => ctx.interrupt();
+  signal?.addEventListener('abort', interrupt, { once: true });
+  const vars = groups.map((group, g) => quartz.map((q, i) => group.costs[i] == null ? null : Bool.const(`equip_${g}_${i}`)));
+  const atMost = (xs: Bool<'orbment'>[], count: number) => { if (xs.length > count) solver.add(ctx.AtMost(xs as [Bool<'orbment'>, ...Bool<'orbment'>[]], count)); };
+  const used = quartz.map((q, i) => vars.map(row => row[i]).filter(x => x !== null));
+  const mustHave = new Set(request.mustHaveArts);
+  const trace: { elapsedMs: number; target: number; build: Build }[] = [];
+  let stopReason: SolveStopReason = 'time_limit', attempts = 0, extraArtsOptimal = false;
+  try {
+    groups.forEach((group, g) => atMost(vars[g].filter(x => x !== null), group.slots.length));
+    quartz.forEach((q, i) => atMost(used[i], Math.min(available(q), q.uniqueEquip ? 1 : slots.length)));
+    for (const field of ['name', 'family']) {
+      const sets = new Map<string, Bool<'orbment'>[]>();
+      quartz.forEach((q, i) => {
+        const key = field === 'name' ? nameKey(q) : q.family;
+        if (key) sets.set(key, [...(sets.get(key) ?? []), ...used[i]]);
+      });
+      for (const xs of sets.values()) atMost(xs, 1);
     }
-  };
-
-  const search = (depth: number) => {
-    if (nodesVisited >= maxNodes) { truncated = true; return; }
-    nodesVisited += 1;
-    if (!canStillSatisfy()) return;
-    if (depth === slotOrder.length) {
-      const build = buildFromAssignment(request, assignments, quartzById, artById);
-      if (build) insertBuild(build);
-      return;
+    const center = getCentralSlotId(request.character);
+    for (const [l] of request.character.lines.entries()) for (const type of ['blade', 'shield', 'reason'] as const) {
+      const xs = groups.flatMap((group, g) => group.slots[0].id === center || !group.memberships[l] ? []
+        : quartz.flatMap((q, i) => getQuartzLineType(q) === type && vars[g][i] ? [vars[g][i]!] : []));
+      atMost(xs, 1);
     }
-    const slot = slotOrder[depth];
-    const policy = request.slotPolicies[slot.id];
-    for (const candidate of candidates[slot.id]) {
-      if (nodesVisited >= maxNodes) { truncated = true; break; }
-      const lineType = candidate ? quartzLineTypes.get(candidate.id)! : null;
-      const typeScopes = slotTypeScopes.get(slot.id)!;
-      if (candidate) {
-        const nameKey = equipNameKey(candidate);
-        if (usedNames.has(nameKey)) continue;
-        if ((usage[candidate.id] ?? 0) >= availableCount(request, candidate.id, teammateCounts)) continue;
-        if (candidate.uniqueEquip && (usage[candidate.id] ?? 0) > 0) continue;
-        if (candidate.family && usedFamilies.has(candidate.family)) continue;
-        if (lineType && typeScopes.some((scope) => scope.has(lineType))) continue;
-        const requiredLevel = requiredQuartzLevel(candidate);
-        if (requiredLevel > policy.currentLevel && (!policy.allowUpgrade || requiredLevel > policy.maxLevel)) continue;
-        assignments[slot.id] = candidate.id;
-        usage[candidate.id] = (usage[candidate.id] ?? 0) + 1;
-        usedNames.add(nameKey);
-        if (candidate.family) usedFamilies.add(candidate.family);
-        if (lineType) for (const scope of typeScopes) scope.add(lineType);
-      } else assignments[slot.id] = null;
-      assigned.add(slot.id);
-      search(depth + 1);
-      assigned.delete(slot.id);
-      if (candidate) {
-        usage[candidate.id] -= 1;
-        if (usage[candidate.id] === 0) delete usage[candidate.id];
-        usedNames.delete(equipNameKey(candidate));
-        if (candidate.family) usedFamilies.delete(candidate.family);
-        if (lineType) for (const scope of typeScopes) scope.delete(lineType);
+    const unlocks = request.arts.map((art, a) => {
+      const witnesses = request.character.lines.flatMap((line, l) => {
+        const conditions: Bool<'orbment'>[] = [];
+        for (const e of elements) {
+          const requirement = art.requirements[e] ?? 0;
+          if (requirement <= 0) continue;
+          const xs: Bool<'orbment'>[] = [], weights: number[] = [];
+          let upper = 0;
+          groups.forEach((group, g) => {
+            let highest = 0;
+            quartz.forEach((q, i) => {
+              const weight = group.memberships[l] * (q.elements[e] ?? 0);
+              if (vars[g][i] && weight > 0) { xs.push(vars[g][i]!); weights.push(weight); highest = Math.max(highest, weight); }
+            });
+            upper += highest * group.slots.length;
+          });
+          if (upper < requirement) return [];
+          conditions.push(ctx.PbGe(xs as [Bool<'orbment'>, ...Bool<'orbment'>[]], weights as [number, ...number[]], requirement));
+        }
+        return [conditions.length ? And(...conditions) : Bool.val(true)];
+      });
+      const x = Bool.const(`art_${a}`);
+      solver.add(x.eq(witnesses.length ? Or(...witnesses) : Bool.val(false)));
+      return x;
+    });
+    for (const id of mustHave) {
+      const index = request.arts.findIndex(a => a.id === id);
+      if (index < 0) throw new Error(`不存在的魔法 ${id}`);
+      solver.add(unlocks[index]);
+    }
+    const extras = unlocks.filter((x, i) => !mustHave.has(request.arts[i].id));
+    const modelStats = { physicalSlots: slots.length, equivalentSlotGroups: groups.length,
+      equipmentVariables: vars.flat().filter(x => x !== null).length };
+    const decode = (model: Model<'orbment'>): Build => {
+      const isTrue = (x: Bool<'orbment'>) => ctx.isTrue(model.eval(x, true));
+      const assignments: Record<number, string | null> = Object.fromEntries(slots.map(s => [s.id, null]));
+      groups.forEach((group, g) => {
+        const selected = quartz.filter((q, i) => vars[g][i] && isTrue(vars[g][i]!));
+        // Canonical placement is a decoding convention, not a solver objective.
+        selected.forEach((q, i) => { assignments[group.slots[i].id] = q.id; });
+      });
+      const byId = new Map(quartz.map(q => [q.id, q]));
+      const equipped = slots.map(s => byId.get(assignments[s.id] ?? ''));
+      const purchases: Record<string, number> = {};
+      for (const q of equipped.filter((q): q is Quartz => q !== undefined)) {
+        const count = equipped.filter(other => other?.id === q.id).length;
+        const bought = Math.max(0, count - (request.resources[q.id]?.ownedCount ?? 0));
+        if (bought) purchases[q.id] = bought;
       }
-      assignments[slot.id] = null;
+      const slotFinalLevels = Object.fromEntries(slots.map((s, i) => [s.id, Math.max(request.slotPolicies[s.id].currentLevel, equipped[i] ? level(equipped[i]) : 0)]));
+      const unlockedArts = request.arts.filter((a, i) => isTrue(unlocks[i])).map(a => a.id);
+      const lineTotals = Object.fromEntries(request.character.lines.map(line => [line.id, Object.fromEntries(elements.map(e => [e,
+        line.slots.reduce((n, id) => n + (byId.get(assignments[id] ?? '')?.elements[e] ?? 0), 0)])) as ElementValues]));
+      const upgradeSteps = slots.reduce((n, s) => n + slotFinalLevels[s.id] - request.slotPolicies[s.id].currentLevel, 0);
+      const upgradedSlotCount = slots.filter(s => slotFinalLevels[s.id] > request.slotPolicies[s.id].currentLevel).length;
+      const metrics = { upgradeSteps, upgradedSlotCount, purchasedCount: Object.values(purchases).reduce((n, count) => n + count, 0),
+        purchaseCost: Object.entries(purchases).reduce((n, [id, count]) => n + count * (request.resources[id]?.shopPrice ?? 0), 0),
+        extraArtsCount: unlockedArts.filter(id => !mustHave.has(id)).length,
+        ats: equipped.reduce((n, q) => n + (q?.stats?.ats ?? 0), 0), spd: equipped.reduce((n, q) => n + (q?.stats?.spd ?? 0), 0) };
+      const artWitness = Object.fromEntries(request.arts.filter(a => unlockedArts.includes(a.id)).map(a => [a.id,
+        request.character.lines.find(line => elements.every(e => lineTotals[line.id][e] >= (a.requirements[e] ?? 0)))!.id]));
+      return { assignments, slotFinalLevels, purchases, lineTotals, unlockedArts, artWitness, metrics };
+    };
+    let target = 0;
+    while (true) {
+      if (signal?.aborted) { stopReason = 'cancelled'; break; }
+      const remaining = Math.floor(budgetMs - (performance.now() - started));
+      if (remaining <= 0) break;
+      onProgress({ phase: 'searching', message: target ? `正在尝试至少 ${target} 个额外魔法` : '正在寻找第一个合法方案', elapsedMs: Math.round(performance.now() - started), budgetMs, target, attempts, bestExtraArtsCount: trace.at(-1)?.build.metrics.extraArtsCount ?? null });
+      solver.set('timeout', remaining);
+      attempts++;
+      const status = await solver.check();
+      if (signal?.aborted) { stopReason = 'cancelled'; break; }
+      if (status === 'unsat') { stopReason = trace.length ? 'no_better' : 'no_solution'; extraArtsOptimal = trace.length > 0; break; }
+      if (status === 'unknown') {
+        const reason = solver.reasonUnknown();
+        stopReason = /timeout|canceled/i.test(reason) || performance.now() - started >= budgetMs ? 'time_limit' : 'solver_unknown';
+        break;
+      }
+      const build = decode(solver.model());
+      trace.push({ elapsedMs: Math.round(performance.now() - started), target, build });
+      onCandidate({ status: 'solved', builds: trace.slice(-(request.maxResults ?? 20)).reverse().map(record => record.build), attempts, elapsedMs: Math.round(performance.now() - started), budgetMs, stopReason: 'searching', extraArtsOptimal: false, message: `当前最佳：${build.metrics.extraArtsCount} 个额外魔法，继续尝试改善。`, model: modelStats, improvements: trace.map(record => ({ elapsedMs: record.elapsedMs, extraArtsCount: record.build.metrics.extraArtsCount })) });
+      if (signal?.aborted) { stopReason = 'cancelled'; break; }
+      target = build.metrics.extraArtsCount + 1;
+      if (target > extras.length) { stopReason = 'no_better'; extraArtsOptimal = true; break; }
+      // Raise the required minimum. Every new SAT model strictly improves extras.
+      solver.add(ctx.AtLeast(extras as [Bool<'orbment'>, ...Bool<'orbment'>[]], target));
     }
-  };
-
-  search(0);
-  if (!builds.length) return { status: 'no_solution', builds, nodesVisited, truncated, message: truncated ? '在本次搜索上限内未找到合法方案。可尝试减少目标或允许更多升级与购买。' : '未找到满足全部必须魔法的合法配置。请检查库存、商店与槽位升级策略。' };
-  return { status: 'solved', builds, nodesVisited, truncated, message: truncated ? `找到 ${builds.length} 个已搜索范围内的最佳候选方案（已达到搜索上限）。` : `找到 ${builds.length} 个最优候选方案。` };
+    const best = trace.at(-1)?.build.metrics.extraArtsCount;
+    const reasons: Partial<Record<SolveStopReason, string>> = {
+      time_limit: trace.length ? `已到尝试时间上限，最佳 ${best} 个额外魔法。` : '已到尝试时间上限，暂未找到合法方案；这不代表无解。',
+      no_better: `最佳 ${best} 个额外魔法，已证明无法增加数量。`,
+      no_solution: '未找到满足全部必须魔法的合法配置（已证明约束无解）。',
+      cancelled: trace.length ? `已取消，保留最佳 ${best} 个额外魔法的方案。` : '已取消，尚未找到合法方案。',
+      solver_unknown: trace.length ? `本次尝试未完成，保留最佳 ${best} 个额外魔法的方案。` : '本次尝试未完成，暂未找到合法方案。',
+    };
+    return { status: trace.length ? 'solved' : stopReason === 'no_solution' ? 'no_solution' : signal?.aborted ? 'cancelled' : 'unknown',
+      budgetMs, stopReason, message: reasons[stopReason]!,
+      builds: trace.slice(-(request.maxResults ?? 20)).reverse().map(record => record.build),
+      improvements: trace.map(record => ({ elapsedMs: record.elapsedMs, extraArtsCount: record.build.metrics.extraArtsCount })), extraArtsOptimal,
+      elapsedMs: Math.round(performance.now() - started), attempts, model: modelStats };
+  } finally { signal?.removeEventListener('abort', interrupt); solver.release(); }
 }

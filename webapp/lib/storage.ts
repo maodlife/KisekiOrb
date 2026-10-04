@@ -39,6 +39,8 @@ export function normalizePlayerState(gameData: GameData, stored: Partial<PlayerS
   ]));
   if (!['available_only', 'owned_only', 'owned_plus_shop'].includes(lastSolver.resourceMode)) lastSolver.resourceMode = fallback.lastSolver.resourceMode;
   if (!gameData.characters.some((character) => character.id === lastSolver.characterId)) lastSolver.characterId = fallback.lastSolver.characterId;
+  lastSolver.rankingPreset = 'extra_arts';
+  lastSolver.timeoutSeconds = Number.isInteger(lastSolver.timeoutSeconds) && lastSolver.timeoutSeconds! >= 1 && lastSolver.timeoutSeconds! <= 120 ? lastSolver.timeoutSeconds : 10;
   const validArts = lastSolver.mustHaveArts.filter((id) => gameData.arts.some((art) => art.id === id));
   lastSolver.mustHaveArts = validArts.length || lastSolver.mustHaveArts.length === 0 ? validArts : fallback.lastSolver.mustHaveArts;
   return { version: fallback.version, resources: normalizedResources, slotLevels: normalizedLevels,

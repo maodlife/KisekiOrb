@@ -70,6 +70,7 @@ export type PlayerState = {
     resourceMode: ResourceMode;
     mustHaveArts: string[];
     rankingPreset: RankingPreset;
+    timeoutSeconds?: number;
   };
 };
 
@@ -88,7 +89,7 @@ export type SolveRequest = {
   mustHaveArts: string[];
   rankingPreset: RankingPreset;
   maxResults: number;
-  maxNodes?: number;
+  timeoutMs?: number;
 };
 
 export type BuildMetrics = {
@@ -111,13 +112,34 @@ export type Build = {
   metrics: BuildMetrics;
 };
 
+export type SolveStopReason = 'searching' | 'no_better' | 'no_solution' | 'time_limit' | 'cancelled' | 'solver_unknown' | 'invalid_request';
+export type SolverModelInfo = { physicalSlots: number; equivalentSlotGroups: number; equipmentVariables: number };
 export type SolveResult = {
-  status: 'solved' | 'no_solution' | 'invalid_request';
+  status: 'solved' | 'no_solution' | 'invalid_request' | 'unknown' | 'cancelled';
   builds: Build[];
-  nodesVisited: number;
-  truncated: boolean;
+  attempts: number;
+  elapsedMs: number;
+  budgetMs: number;
+  stopReason: SolveStopReason;
+  extraArtsOptimal: boolean;
   message: string;
+  model?: SolverModelInfo;
+  improvements: { elapsedMs: number; extraArtsCount: number }[];
 };
+export type SolveProgress = {
+  phase: 'initializing' | 'searching';
+  message: string;
+  elapsedMs: number;
+  budgetMs: number;
+  attempts: number;
+  target: number;
+  bestExtraArtsCount: number | null;
+};
+export type SolverWorkerInput = { kind: 'solve'; generation: number; request: SolveRequest } | { kind: 'cancel' };
+export type SolverWorkerOutput =
+  | { type: 'progress'; generation: number; progress: SolveProgress }
+  | { type: 'candidate' | 'complete'; generation: number; result: SolveResult }
+  | { type: 'error'; generation: number; message: string };
 
 export function emptyElements(): ElementValues {
   return { earth: 0, water: 0, fire: 0, wind: 0, time: 0, space: 0, mirage: 0 };

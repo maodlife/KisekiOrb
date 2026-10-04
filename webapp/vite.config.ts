@@ -1,7 +1,10 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
-import { defineConfig } from 'vite';
+import { defineConfig, type ViteDevServer } from 'vite';
+import { createReadStream } from 'node:fs';
+import { createRequire } from 'node:module';
+import { ISOLATION_HEADERS } from './lib/z3-hosting.ts';
 import hostingConfig from './.openai/hosting.json';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -13,7 +16,8 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 
 const localBindingConfig = {
-  main: 'vinext/server/fetch-handler',
+  main: './server/index.ts',
+  assets: { binding: 'ASSETS', run_worker_first: true },
   compatibility_flags: ['nodejs_compat'],
   d1_databases: d1
     ? [
@@ -46,10 +50,17 @@ export default defineConfig(async () => {
 
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: { headers: ISOLATION_HEADERS, ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}) },
     plugins: [
+      { name: 'local-official-z3-wasm', configureServer(server: ViteDevServer) {
+        const require = createRequire(import.meta.url);
+        server.middlewares.use((request, response, next) => {
+          if (request.url?.split('?')[0] !== '/vendor/z3-built.wasm') return next();
+          response.setHeader('Content-Type', 'application/wasm');
+          for (const [key, value] of Object.entries(ISOLATION_HEADERS)) response.setHeader(key, value);
+          createReadStream(require.resolve('z3-solver/build/z3-built.wasm')).pipe(response);
+        });
+      } },
       vinext(),
       sites(),
       cloudflare({
