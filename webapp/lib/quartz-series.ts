@@ -7,6 +7,11 @@ export function getQuartzSeries(quartz: Pick<Quartz, 'series' | 'elements'>): El
   return ELEMENTS.reduce((best, element) => quartz.elements[element] > quartz.elements[best] ? element : best, ELEMENTS[0]);
 }
 
+export function getQuartzDisplayElements(quartz: Pick<Quartz, 'series' | 'elements'>): ElementKey[] {
+  const series = getQuartzSeries(quartz);
+  return [series, ...ELEMENTS.filter((element) => element !== series)].filter((element) => quartz.elements[element] > 0);
+}
+
 export function compareQuartzBySeriesLevelName(a: Quartz, b: Quartz): number {
   const seriesDifference = ELEMENTS.indexOf(getQuartzSeries(a)) - ELEMENTS.indexOf(getQuartzSeries(b));
   if (seriesDifference !== 0) return seriesDifference;

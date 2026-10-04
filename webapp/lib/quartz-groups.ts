@@ -1,11 +1,13 @@
 import { ELEMENTS, type ElementKey, type Quartz } from './domain.ts';
+import { getQuartzSeries } from './quartz-series.ts';
 
 export type QuartzGroupId = ElementKey | 'none';
 export const QUARTZ_GROUPS: QuartzGroupId[] = [...ELEMENTS, 'none'];
 
-// Match the order of the element values shown in the inventory.
-export function getQuartzGroup(quartz: Pick<Quartz, 'elements'>): QuartzGroupId {
-  return ELEMENTS.find((element) => quartz.elements[element] > 0) ?? 'none';
+// A quartz's series is independent of the order or magnitude of its element values.
+export function getQuartzGroup(quartz: Pick<Quartz, 'series' | 'elements'>): QuartzGroupId {
+  if (quartz.series && ELEMENTS.includes(quartz.series)) return quartz.series;
+  return ELEMENTS.some((element) => quartz.elements[element] > 0) ? getQuartzSeries(quartz) : 'none';
 }
 
 export function groupQuartzForInventory(quartz: Quartz[]) {

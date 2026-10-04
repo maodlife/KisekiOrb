@@ -14,7 +14,7 @@ import { ART_GROUPS, getArtGroup, groupArtsByFirstElement, type ArtGroupId } fro
 import { createCharacterTemplate } from '@/lib/character-template.ts';
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from '@/lib/default-data.ts';
 import { ELEMENTS, ELEMENT_LABELS, emptyElements, type Build, type Character, type ElementKey, type GameData, type PlayerState, type RankingPreset, type ResourceMode, type SlotPolicy, type SolveRequest, type SolveResult } from '@/lib/domain.ts';
-import { compareQuartzBySeriesLevelName, getQuartzSeries } from '@/lib/quartz-series.ts';
+import { compareQuartzBySeriesLevelName, getQuartzDisplayElements, getQuartzSeries } from '@/lib/quartz-series.ts';
 import { getQuartzGroup, groupQuartzForInventory, QUARTZ_GROUPS, type QuartzGroupId } from '@/lib/quartz-groups.ts';
 import SolverWorker from '@/lib/solver.worker.ts?worker';
 
@@ -61,12 +61,8 @@ function withLineSlots(line: Character['lines'][number], slots: number[]): Chara
   return { ...line, slots, edges };
 }
 
-function nonZeroElements(values: Record<ElementKey, number>) {
-  return ELEMENTS.filter((element) => values[element] > 0);
-}
-
-function ElementSummary({ values, compare }: { values: Record<ElementKey, number>; compare?: Record<ElementKey, number> }) {
-  const active = nonZeroElements(values);
+function ElementSummary({ values, compare, elementOrder = ELEMENTS }: { values: Record<ElementKey, number>; compare?: Record<ElementKey, number>; elementOrder?: readonly ElementKey[] }) {
+  const active = elementOrder.filter((element) => values[element] > 0);
   if (!active.length) return <span className="muted">无元素值</span>;
   return <span className="element-list">{active.map((element) => <span key={element} className={`element-token el-${element} ${compare && values[element] < compare[element] ? 'short' : ''}`}>{ELEMENT_LABELS[element]} {values[element]}{compare?.[element] ? ` / ${compare[element]}` : ''}</span>)}</span>;
 }
@@ -340,7 +336,7 @@ function InventoryView({ gameData, player, search, setSearch, updateResource, se
         <div className="search-box large"><Search size={15} /><input value={search} onChange={(event) => { setSearch(event.target.value); setExpandedGroups(QUARTZ_GROUPS); }} placeholder="搜索回路名称、系列或分组" aria-label="搜索库存回路" /></div>
         <div><Button variant="outline" onClick={() => setAllShop(true)}>全部设为可购</Button><Button variant="ghost" onClick={() => setAllShop(false)}>清空商店</Button></div>
       </div>
-      <p className="inventory-group-help">按元素值中的第一个元素分组，点击分组标题可折叠或展开。</p>
+      <p className="inventory-group-help">按回路所属系列分组，元素值优先显示所属系列；点击分组标题可折叠或展开。</p>
       {groups.length === 0 ? <p className="inventory-empty" role="status">没有匹配的回路，请尝试其他关键词。</p> : <Accordion className="inventory-groups" multiple value={expandedGroups} onValueChange={(value) => setExpandedGroups(value as QuartzGroupId[])}>
         {groups.map((group) => <AccordionItem key={group.id} value={group.id} className="inventory-group">
           <AccordionTrigger className="inventory-group-trigger" aria-label={`${groupLabel(group.id)}分组，${group.quartz.length}种回路`}>
@@ -350,7 +346,7 @@ function InventoryView({ gameData, player, search, setSearch, updateResource, se
             <Table className="resource-table">
               <colgroup><col className="resource-name-column" /><col className="resource-elements-column" /><col className="resource-owned-column" /><col className="resource-shop-column" /><col className="resource-price-column" /><col className="resource-limit-column" /></colgroup>
               <TableHeader><TableRow><TableHead>回路</TableHead><TableHead>元素值</TableHead><TableHead>拥有</TableHead><TableHead>商店</TableHead><TableHead>价格</TableHead><TableHead>购买上限</TableHead></TableRow></TableHeader>
-              <TableBody>{group.quartz.map((quartz) => { const resource = player.resources[quartz.id] ?? { quartzId: quartz.id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }; return <TableRow key={quartz.id}><TableCell><b>{quartz.name}</b><small className="cell-note">{quartz.quartzLevel == null ? '装备等级未录入' : `Lv${quartz.quartzLevel}`} · {ELEMENT_LABELS[getQuartzSeries(quartz)]}系列</small>{quartz.notes && <small className="cell-note">{quartz.notes}</small>}</TableCell><TableCell><ElementSummary values={quartz.elements} /></TableCell><TableCell><Input className="number-input" type="number" min={0} value={resource.ownedCount} onChange={(event) => updateResource(quartz.id, { ownedCount: Math.max(0, Number(event.target.value)) })} aria-label={`${quartz.name}拥有数量`} /></TableCell><TableCell><button role="switch" aria-label={`${quartz.name}商店可购`} aria-checked={resource.shopAvailable} className={`switch-control ${resource.shopAvailable ? 'on' : ''}`} onClick={() => updateResource(quartz.id, { shopAvailable: !resource.shopAvailable })}><span /></button></TableCell><TableCell><Input aria-label={`${quartz.name}商店价格`} className="price-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPrice ?? ''} placeholder="未录入" onChange={(event) => updateResource(quartz.id, { shopPrice: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell><TableCell><Input aria-label={`${quartz.name}购买上限`} className="number-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPurchaseLimit ?? ''} placeholder="∞" onChange={(event) => updateResource(quartz.id, { shopPurchaseLimit: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell></TableRow>; })}</TableBody>
+              <TableBody>{group.quartz.map((quartz) => { const resource = player.resources[quartz.id] ?? { quartzId: quartz.id, ownedCount: 0, shopAvailable: false, shopPrice: null, shopPurchaseLimit: null }; return <TableRow key={quartz.id}><TableCell><b>{quartz.name}</b><small className="cell-note">{quartz.quartzLevel == null ? '装备等级未录入' : `Lv${quartz.quartzLevel}`} · {ELEMENT_LABELS[getQuartzSeries(quartz)]}系列</small>{quartz.notes && <small className="cell-note">{quartz.notes}</small>}</TableCell><TableCell><ElementSummary values={quartz.elements} elementOrder={getQuartzDisplayElements(quartz)} /></TableCell><TableCell><Input className="number-input" type="number" min={0} value={resource.ownedCount} onChange={(event) => updateResource(quartz.id, { ownedCount: Math.max(0, Number(event.target.value)) })} aria-label={`${quartz.name}拥有数量`} /></TableCell><TableCell><button role="switch" aria-label={`${quartz.name}商店可购`} aria-checked={resource.shopAvailable} className={`switch-control ${resource.shopAvailable ? 'on' : ''}`} onClick={() => updateResource(quartz.id, { shopAvailable: !resource.shopAvailable })}><span /></button></TableCell><TableCell><Input aria-label={`${quartz.name}商店价格`} className="price-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPrice ?? ''} placeholder="未录入" onChange={(event) => updateResource(quartz.id, { shopPrice: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell><TableCell><Input aria-label={`${quartz.name}购买上限`} className="number-input" type="number" min={0} disabled={!resource.shopAvailable} value={resource.shopPurchaseLimit ?? ''} placeholder="∞" onChange={(event) => updateResource(quartz.id, { shopPurchaseLimit: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></TableCell></TableRow>; })}</TableBody>
             </Table>
           </AccordionContent>
         </AccordionItem>)}
