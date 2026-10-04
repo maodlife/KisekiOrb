@@ -5,6 +5,7 @@ import { defineConfig, type ViteDevServer } from 'vite';
 import { createReadStream } from 'node:fs';
 import { createRequire } from 'node:module';
 import { ISOLATION_HEADERS } from './lib/z3-hosting.ts';
+import { SOLVER_WORKER_URL, Z3_LOADER_URL, Z3_WASM_URL } from './lib/z3-assets.ts';
 import hostingConfig from './.openai/hosting.json';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -55,10 +56,15 @@ export default defineConfig(async () => {
       { name: 'local-official-z3-wasm', configureServer(server: ViteDevServer) {
         const require = createRequire(import.meta.url);
         server.middlewares.use((request, response, next) => {
-          if (request.url?.split('?')[0] !== '/vendor/z3-built.wasm') return next();
-          response.setHeader('Content-Type', 'application/wasm');
+          const path = request.url?.split('?')[0];
+          const file = path === Z3_WASM_URL ? require.resolve('z3-solver/build/z3-built.wasm')
+            : path === Z3_LOADER_URL ? require.resolve('z3-solver/build/z3-built.js')
+            : path === SOLVER_WORKER_URL ? 'public/vendor/orbment-worker.js' : null;
+          if (!file) return next();
+          response.setHeader('Content-Type', path === Z3_WASM_URL ? 'application/wasm' : 'application/javascript; charset=utf-8');
+          response.setHeader('Cache-Control', 'no-store');
           for (const [key, value] of Object.entries(ISOLATION_HEADERS)) response.setHeader(key, value);
-          createReadStream(require.resolve('z3-solver/build/z3-built.wasm')).pipe(response);
+          createReadStream(file).pipe(response);
         });
       } },
       vinext(),

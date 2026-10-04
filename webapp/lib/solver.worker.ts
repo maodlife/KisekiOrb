@@ -24,7 +24,7 @@ async function initialize(budgetMs: number) {
   if (hash !== Z3_WASM_SHA256) throw new Error('Z3 文件完整性校验失败，请刷新页面后重试。');
   progress('正在初始化 Z3，完成后开始计算尝试时间。');
   scope.importScripts(Z3_LOADER_URL);
-  return init({ wasmBinary, locateFile: file => new URL(`/vendor/${file}`, scope.location.href).href,
+  return init({ wasmBinary, locateFile: () => new URL(Z3_WASM_URL, scope.location.href).href,
     mainScriptUrlOrBlob: new URL(Z3_LOADER_URL, scope.location.href).href });
 }
 scope.onmessage = async ({ data }) => {

@@ -42,7 +42,13 @@ export class SolverClient {
         if (data.type === 'complete') this.update({ result: data.result, progress: null, busy: false, cancelling: false });
         if (data.type === 'error') this.fail(data.message);
       };
-      worker.onerror = () => { if (worker === this.worker && this.state.busy) this.fail('后台求解器运行失败，请重试。'); };
+      worker.onerror = event => {
+        if (worker !== this.worker || !this.state.busy) return;
+        const detail = event.message?.trim();
+        const file = event.filename ? new URL(event.filename, 'https://localhost').pathname : '';
+        const location = file ? `（${file}${event.lineno ? `:${event.lineno}` : ''}）` : '';
+        this.fail(detail ? `后台求解器运行失败：${detail}${location}` : '后台求解器脚本加载失败，请刷新页面后重试。');
+      };
       worker.postMessage({ kind: 'solve', generation, request });
     } catch (error) { this.fail(error instanceof Error ? error.message : '无法启动后台求解器，请重试。'); }
   }

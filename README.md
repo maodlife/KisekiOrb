@@ -21,6 +21,7 @@ cd webapp
 pnpm test
 pnpm exec tsc --noEmit
 pnpm build
+node scripts/test-browser-worker.mjs
 node --experimental-strip-types scripts/benchmark-z3.ts
 ```
 
@@ -59,4 +60,6 @@ node --experimental-strip-types scripts/benchmark-z3.ts
 
 回路可装备条件、升级成本、线路成员和中央槽例外完全相同的槽位才会合并。模型使用布尔与伪布尔约束，不再使用自写搜索、节点上限或 Optimize 多层目标。结果展示最多 20 个改善候选，额外魔法更多的方案在前；费用、升级和 ATS/SPD 仅作为比较指标，不保证最优，也不宣称这些候选是全部配装的前 20 名。
 
-服务端及本地开发服务器显式启用 COOP / COEP，为官方包提供 SharedArrayBuffer。正式站点同源转发固定版本的官方 WASM，浏览器按已核验的 SHA-256 检查完整性。已有库存、装备、槽位等级和备份继续保留；旧排序设置迁移为限时增加额外魔法，缺少或无效时间时使用 10 秒。
+服务端及本地开发服务器显式启用 COOP / COEP，为官方包提供 SharedArrayBuffer。求解 Worker、官方子线程加载脚本与 WASM 分别走 `/api/z3/worker`、`/api/z3/loader`、`/api/z3/wasm`；脚本接口为静态资源补齐隔离响应头，避免静态托管绕过服务器时导致 Worker 启动失败。正式站点同源转发固定版本的官方 WASM，浏览器按已核验的 SHA-256 检查完整性。已有库存、装备、槽位等级和备份继续保留；旧排序设置迁移为限时增加额外魔法，缺少或无效时间时使用 10 秒。
+
+`test-browser-worker.mjs` 在没有 Node 全局变量的 VM 中执行实际打包的经典 Worker 与未修改的官方加载脚本，并用真实线程运行 WASM；可设置 `Z3_TEST_ORIGIN=http://127.0.0.1:端口` 检查生产 HTTP 响应及完整加载链路。这项检查不替代浏览器自身的安全策略验证。浏览器线程错误会显示原始错误与脚本位置，便于排查设备或部署环境差异。

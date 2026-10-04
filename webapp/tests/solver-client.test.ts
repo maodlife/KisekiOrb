@@ -55,3 +55,10 @@ test('a Worker error after a candidate preserves that candidate without claiming
   assert.equal(f.state().result?.builds.length, 1); assert.equal(f.state().result?.extraArtsOptimal, false);
   assert.equal(f.state().result?.stopReason, 'solver_unknown'); assert.equal(f.state().busy, false);
 });
+test('native Worker errors include the browser diagnostic and script location', () => {
+  const f = fixture(); f.client.run(request);
+  f.workers[0].onerror?.({ message: 'Uncaught ReferenceError: example is not defined', filename: 'https://example.test/api/z3/worker', lineno: 12 } as ErrorEvent);
+  assert.match(f.state().result?.message ?? '', /ReferenceError: example is not defined/);
+  assert.match(f.state().result?.message ?? '', /\/api\/z3\/worker:12/);
+  assert.equal(f.state().busy, false); assert.equal(f.workers[0].terminated, true);
+});
