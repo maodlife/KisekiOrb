@@ -3,26 +3,28 @@ import { Noto_Sans_SC } from 'next/font/google';
 import './globals.css';
 
 const notoSans = Noto_Sans_SC({ variable: '--font-app', subsets: ['latin'], weight: ['400', '500', '600', '700'] });
+const isGitHubPages = process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true';
+const basePath = isGitHubPages ? (process.env.NEXT_PUBLIC_BASE_PATH ?? '/KisekiOrb') : '';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://kiseki-orbment-solver.maodlife.chatgpt.site'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? (isGitHubPages ? 'https://maodlife.github.io' : 'https://kiseki-orbment-solver.maodlife.chatgpt.site')),
   title: 'Orbment · 导力器配装求解器',
   description: '《空之轨迹 the 2nd》本地导力器与魔法约束求解工具',
-  icons: { icon: '/favicon.svg' },
+  icons: { icon: `${basePath}/favicon.svg` },
   openGraph: {
     type: 'website',
     title: 'Orbment 导力器配装求解器',
     description: '本地 · 可解释 · 约束求解',
-    images: [{ url: '/og.png', width: 1600, height: 900, alt: 'Orbment 导力器配装求解器' }],
+    images: [{ url: `${basePath}/og.png`, width: 1600, height: 900, alt: 'Orbment 导力器配装求解器' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Orbment 导力器配装求解器',
     description: '本地 · 可解释 · 约束求解',
-    images: ['/og.png'],
+    images: [`${basePath}/og.png`],
   },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body className={notoSans.variable}>{children}</body></html>;
+  return <html lang="zh-CN"><head>{isGitHubPages && <script defer src={`${basePath}/coi-serviceworker.js`} />}</head><body className={notoSans.variable}>{children}</body></html>;
 }

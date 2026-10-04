@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node scripts/prepare-z3.mjs && vinext dev",
     "build": "node scripts/prepare-z3.mjs && vinext build",
+    "build:pages": "NEXT_PUBLIC_GITHUB_PAGES=true pnpm build && node scripts/finalize-pages.mjs",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "test": "node --experimental-strip-types --test --test-isolation=none tests/*.test.ts",
     "lint": "oxlint app/page.tsx app/layout.tsx lib",

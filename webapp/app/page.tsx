@@ -1,5 +1,8 @@
 'use client';
 
+// The initial HTML has no request-dependent data; state is hydrated locally.
+export const dynamic = 'force-static';
+
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';

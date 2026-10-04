@@ -2,6 +2,16 @@
 
 《空之轨迹 the 2nd》本地导力器（Orbment）与魔法（Arts）约束求解器。
 
+## GitHub Pages
+
+访问 <https://maodlife.github.io/KisekiOrb/>。推送 `webapp/` 或部署工作流的更新到 `master` 后，GitHub Actions 自动校验、静态构建、用 Chromium 验证求解，再发布到 Pages。也可以在 Actions 中手动运行 `Deploy GitHub Pages`。
+
+Pages 构建使用 `pnpm build:pages`，输出为 `webapp/dist/client/`，默认访问前缀为 `/KisekiOrb`。工作流从 Pages 设置读取路径和域名；现有 `pnpm dev`、`pnpm build` 继续使用 Sites / Cloudflare 配置。
+
+Z3 的 Worker、官方加载脚本与已校验的 WASM 一起发布，不需要 `/api/z3/*` 后端。GitHub Pages 无法自定义 COOP / COEP 响应头，因此首次访问会注册同源 Service Worker，并自动刷新一次来启用 SharedArrayBuffer。需要支持 Service Worker 的现代浏览器和 HTTPS。玩家数据仍只保存在当前浏览器；从其它域名迁移时，使用 JSON 导出、导入。
+
+静态托管的浏览器检查：先在 `webapp/` 执行 `pnpm build:pages`，安装 Python `playwright==1.58.0` 和 Chromium，再执行 `python scripts/test-pages.py`。检查使用没有隔离响应头的静态服务器，验证首次加载、子路径资源、真实 Z3 求解及本地状态保留。
+
 ## 本地运行
 
 需要 Node.js 22+ 与 pnpm：
