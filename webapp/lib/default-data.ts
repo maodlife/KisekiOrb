@@ -35,6 +35,7 @@ export function createDefaultPlayerState(gameData: GameData = DEFAULT_GAME_DATA)
     lastSolver: {
       characterId: gameData.characters[0]?.id ?? '',
       resourceMode: 'owned_only',
+      mustHaveQuartz: [],
       mustHaveArts: gameData.arts.some((item) => item.id === 'art-water-06') && gameData.arts.some((item) => item.id === 'art-time-07')
         ? ['art-water-06', 'art-time-07']
         : [],

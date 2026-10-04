@@ -80,11 +80,21 @@ if (workerData?.classic) {
         worker.postMessage({ kind: 'solve', generation, request });
       });
       assert.equal(result.status, 'solved'); assert.equal(result.stopReason, 'no_better');
-      assert.equal(result.builds[0].metrics.extraArtsCount, 37);
+      if (generation === 1) assert.equal(result.builds[0].metrics.extraArtsCount, 37);
       assert.equal(initialized, generation === 1, 'The second solve must reuse initialized WASM');
       assert.ok(candidates > 0);
-      for (const build of result.builds) assert.equal(equipBuild(player, character, game.quartz, build).ok, true);
-      console.log(`Shipped browser Worker run ${generation}: ${candidates} improvements, 37 extra arts, ${result.elapsedMs} ms; cached initialization ${!initialized}.`);
+      for (const build of result.builds) {
+        assert.equal(equipBuild(player, character, game.quartz, build).ok, true);
+        for (const id of request.mustHaveQuartz ?? []) assert.ok(Object.values(build.assignments).includes(id));
+      }
+      console.log(`Shipped browser Worker run ${generation}: ${candidates} improvements, ${result.builds[0].metrics.extraArtsCount} extra arts, ${result.elapsedMs} ms; cached initialization ${!initialized}; required quartz ${(request.mustHaveQuartz ?? []).join(',') || 'none'}.`);
+      if (generation === 1) {
+        const required = game.quartz.find(q => player.resources[q.id].ownedCount > 0
+          && !Object.values(result.builds[0].assignments).includes(q.id)
+          && character.slots.some(slot => slot.currentLevel >= (q.quartzLevel ?? 1) && (!slot.restriction || slot.restriction === q.series)));
+        assert.ok(required, 'Need a feasible required quartz absent from the unconstrained best build');
+        request.mustHaveQuartz = [required.id];
+      }
     }
   } finally { await worker.terminate(); }
 }

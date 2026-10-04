@@ -13,8 +13,9 @@ export function failedSolveResult(budgetMs: number, message: string): SolveResul
   return { status: 'invalid_request', builds: [], attempts: 0, elapsedMs: 0, budgetMs, stopReason: 'invalid_request', extraArtsOptimal: false, improvements: [], message };
 }
 function validateRequest(request: SolveRequest): string | null {
-  if (!request.mustHaveArts.length) return '请至少选择一个必须魔法。';
+  if (!request.mustHaveArts.length && !request.mustHaveQuartz?.length) return '请至少选择一个必须回路或必须魔法。';
   if (request.mustHaveArts.some(id => !request.arts.some(a => a.id === id))) return '请求中包含不存在的魔法。';
+  if (request.mustHaveQuartz?.some(id => !request.quartz.some(q => q.id === id))) return '请求中包含不存在的必须回路。';
   const center = getCentralSlotId(request.character);
   const ids = new Set(request.character.slots.map(s => s.id));
   if (center !== null && !ids.has(center)) return '中央插槽引用了不存在的物理槽位，请检查角色导力器设置。';
@@ -75,6 +76,12 @@ export async function solveOrbment(api: SolverApi, request: SolveRequest, { onCa
   try {
     groups.forEach((group, g) => atMost(vars[g].filter(x => x !== null), group.slots.length));
     quartz.forEach((q, i) => atMost(used[i], Math.min(available(q), q.uniqueEquip ? 1 : slots.length)));
+    // Required quartz must occupy a physical slot; they cannot be replaced by
+    // another quartz with matching elements, name or series.
+    for (const id of new Set(request.mustHaveQuartz ?? [])) {
+      const xs = used[quartz.findIndex(q => q.id === id)];
+      solver.add(xs.length ? Or(...xs) : Bool.val(false));
+    }
     for (const field of ['name', 'family']) {
       const sets = new Map<string, Bool<'orbment'>[]>();
       quartz.forEach((q, i) => {
@@ -181,7 +188,7 @@ export async function solveOrbment(api: SolverApi, request: SolveRequest, { onCa
     const reasons: Partial<Record<SolveStopReason, string>> = {
       time_limit: trace.length ? `已到尝试时间上限，最佳 ${best} 个额外魔法。` : '已到尝试时间上限，暂未找到合法方案；这不代表无解。',
       no_better: `最佳 ${best} 个额外魔法，已证明无法增加数量。`,
-      no_solution: '未找到满足全部必须魔法的合法配置（已证明约束无解）。',
+      no_solution: '未找到满足全部必选条件的合法配置（已证明约束无解）。',
       cancelled: trace.length ? `已取消，保留最佳 ${best} 个额外魔法的方案。` : '已取消，尚未找到合法方案。',
       solver_unknown: trace.length ? `本次尝试未完成，保留最佳 ${best} 个额外魔法的方案。` : '本次尝试未完成，暂未找到合法方案。',
     };

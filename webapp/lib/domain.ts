@@ -69,6 +69,7 @@ export type PlayerState = {
     characterId: string;
     resourceMode: ResourceMode;
     mustHaveArts: string[];
+    mustHaveQuartz?: string[];
     rankingPreset: RankingPreset;
     timeoutSeconds?: number;
   };
@@ -87,6 +88,7 @@ export type SolveRequest = {
   resourceMode: ResourceMode;
   slotPolicies: Record<number, SlotPolicy>;
   mustHaveArts: string[];
+  mustHaveQuartz?: string[];
   rankingPreset: RankingPreset;
   maxResults: number;
   timeoutMs?: number;

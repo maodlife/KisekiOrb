@@ -102,9 +102,11 @@ export default function Home() {
   const [resourceMode, setResourceMode] = useState<ResourceMode>('owned_only');
   const [timeoutSeconds, setTimeoutSeconds] = useState('10');
   const [mustHave, setMustHave] = useState<string[]>(['art-water-06', 'art-time-07']);
+  const [mustHaveQuartz, setMustHaveQuartz] = useState<string[]>([]);
   const [policies, setPolicies] = useState<Record<number, SlotPolicy>>(() => makePolicies(DEFAULT_GAME_DATA.characters[0], createDefaultPlayerState(DEFAULT_GAME_DATA)));
   const [activeSlot, setActiveSlot] = useState(0);
   const [artSearch, setArtSearch] = useState('');
+  const [quartzSearch, setQuartzSearch] = useState('');
   const [inventorySearch, setInventorySearch] = useState('');
   const { result: solveResult, progress: solveProgress, busy: solving, cancelling, elapsedMs: solveElapsed, run, cancel, reset: resetSolver } = useOrbmentSolver();
   const [expandedBuild, setExpandedBuild] = useState(0);
@@ -119,17 +121,26 @@ export default function Home() {
     setGameData(loadedGame); setPlayer(loadedPlayer); setCharacterId(savedCharacter.id);
     setResourceMode(loadedPlayer.lastSolver.resourceMode); setTimeoutSeconds(String(loadedPlayer.lastSolver.timeoutSeconds ?? 10));
     setMustHave(loadedPlayer.lastSolver.mustHaveArts.filter((id) => loadedGame.arts.some((art) => art.id === id)));
+    setMustHaveQuartz(loadedPlayer.lastSolver.mustHaveQuartz ?? []);
     setPolicies(makePolicies(savedCharacter, loadedPlayer)); setActiveSlot(savedCharacter.slots[0]?.id ?? 0); setHydrated(true);
   }, []);
 
-  useEffect(() => { resetSolver(); }, [characterId, resourceMode, mustHave, policies, gameData, player.resources, player.equipment, resetSolver]);
+  useEffect(() => { resetSolver(); }, [characterId, resourceMode, mustHave, mustHaveQuartz, policies, gameData, player.resources, player.equipment, resetSolver]);
+  useEffect(() => {
+    if (!hydrated) return;
+    // Keep selection valid when an edited/imported game database removes quartz.
+    setMustHaveQuartz((current) => {
+      const valid = current.filter((id) => gameData.quartz.some((quartz) => quartz.id === id));
+      return valid.length === current.length ? current : valid;
+    });
+  }, [gameData.quartz, hydrated]);
   useEffect(() => { if (hydrated) saveGameData(gameData); }, [gameData, hydrated]);
   useEffect(() => { if (hydrated) savePlayerState(player); }, [player, hydrated]);
   useEffect(() => {
     if (!hydrated) return;
     // oxlint-disable-next-line react/react-compiler -- persist the latest solver preferences in player state
-    setPlayer((current) => ({ ...current, lastSolver: { characterId, resourceMode, mustHaveArts: mustHave, rankingPreset: 'extra_arts', timeoutSeconds: Number(timeoutSeconds) || 10 } }));
-  }, [characterId, resourceMode, mustHave, timeoutSeconds, hydrated]);
+    setPlayer((current) => ({ ...current, lastSolver: { characterId, resourceMode, mustHaveArts: mustHave, mustHaveQuartz, rankingPreset: 'extra_arts', timeoutSeconds: Number(timeoutSeconds) || 10 } }));
+  }, [characterId, resourceMode, mustHave, mustHaveQuartz, timeoutSeconds, hydrated]);
 
   const character = gameData.characters.find((item) => item.id === characterId) ?? gameData.characters[0];
   const quartzNames = useMemo(() => Object.fromEntries(gameData.quartz.map((quartz) => [quartz.id, quartz.name])), [gameData.quartz]);
@@ -145,13 +156,14 @@ export default function Home() {
 
   const patchPolicy = (slotId: number, patch: Partial<SlotPolicy>) => setPolicies((current) => ({ ...current, [slotId]: { ...current[slotId], ...patch } }));
   const toggleArt = (id: string) => setMustHave((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const toggleQuartz = (id: string) => setMustHaveQuartz((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
   const validTime = Number.isInteger(Number(timeoutSeconds)) && Number(timeoutSeconds) >= 1 && Number(timeoutSeconds) <= 120;
   const runSolver = () => {
     if (!validTime || solving) return;
     setExpandedBuild(0);
     const request: SolveRequest = { character, quartz: gameData.quartz, arts: gameData.arts, resources: player.resources,
-      equipment: player.equipment, resourceMode, slotPolicies: policies, mustHaveArts: mustHave,
+      equipment: player.equipment, resourceMode, slotPolicies: policies, mustHaveArts: mustHave, mustHaveQuartz,
       rankingPreset: 'extra_arts', maxResults: 20, timeoutMs: Number(timeoutSeconds) * 1000 };
     run(request);
   };
@@ -202,6 +214,7 @@ export default function Home() {
       setGameData(parsed.gameData); setPlayer(importedPlayer);
       const nextCharacter = parsed.gameData.characters.find((item) => item.id === importedPlayer.lastSolver.characterId) ?? parsed.gameData.characters[0];
       setCharacterId(nextCharacter.id); setPolicies(makePolicies(nextCharacter, importedPlayer)); setMustHave(importedPlayer.lastSolver.mustHaveArts);
+      setMustHaveQuartz(importedPlayer.lastSolver.mustHaveQuartz ?? []);
       setResourceMode(importedPlayer.lastSolver.resourceMode); setTimeoutSeconds(String(importedPlayer.lastSolver.timeoutSeconds ?? 10)); setActiveSlot(nextCharacter.slots[0]?.id ?? 0); resetSolver(); setNotice('导入成功，库存与装备记录已自动保存。');
     } catch { setNotice('导入失败：文件不是有效的 Orbment 备份。'); }
     event.target.value = '';
@@ -210,6 +223,7 @@ export default function Home() {
   const resetAll = () => {
     setTimeoutSeconds('10'); resetLocalData(); const freshGame = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)) as GameData; const freshPlayer = createDefaultPlayerState(freshGame);
     setGameData(freshGame); setPlayer(freshPlayer); setCharacterId(freshGame.characters[0].id); setPolicies(makePolicies(freshGame.characters[0], freshPlayer)); setMustHave(freshPlayer.lastSolver.mustHaveArts); resetSolver(); setNotice('已恢复内置截图数据。');
+    setMustHaveQuartz(freshPlayer.lastSolver.mustHaveQuartz ?? []);
   };
 
   return <main className="app-shell">
@@ -250,9 +264,10 @@ export default function Home() {
               <button className={`radio-row ${resourceMode === 'owned_plus_shop' ? 'selected' : ''}`} onClick={() => setResourceMode('owned_plus_shop')}><i />已拥有 + 商店<span>{Object.values(player.resources).filter((item) => item.ownedCount > 0 || item.shopAvailable).length} 种可用</span></button>
               <p className="helper">{resourceMode === 'available_only' ? '排除队友装备的回路；当前角色的装备可复用。' : '按总拥有数规划，包含队友装备的回路；实际装备时仍需有可用库存。'}</p>
             </section>
+            <QuartzPicker quartz={gameData.quartz} mustHave={mustHaveQuartz} toggleQuartz={toggleQuartz} clearSelection={() => setMustHaveQuartz([])} search={quartzSearch} setSearch={setQuartzSearch} />
             <ArtsPicker arts={gameData.arts} mustHave={mustHave} toggleArt={toggleArt} clearSelection={() => setMustHave([])} search={artSearch} setSearch={setArtSearch} />
-            <section className="panel compact-panel"><p className="step">04 · 求解目标与时间</p><h3>尽可能多的额外魔法</h3><label className="attempt-time" htmlFor="attempt-seconds">尝试时间 <Input id="attempt-seconds" type="number" min={1} max={120} step={1} value={timeoutSeconds} disabled={solving} onChange={(event) => setTimeoutSeconds(event.target.value)} aria-describedby="attempt-time-help" /><span>秒</span></label><p id="attempt-time-help" className="helper">默认 10 秒，可设 1–120 秒。先找合法配装，再持续增加额外魔法；到时保留最佳方案。首次下载与初始化不计入时间。</p>{!validTime && <p className="helper time-error" role="alert">请输入 1–120 的整数。</p>}<p className="helper">升级、购买和属性值用于比较候选，不保证这些指标最优。</p></section>
-            <div className="solve-actions"><button className="solve-button" disabled={solving || mustHave.length === 0 || !validTime} onClick={runSolver}><Sparkles size={18} />{solving ? '正在尝试改善配装…' : '开始求解'}<span>{timeoutSeconds || '10'} 秒</span></button>{solving && <Button variant="outline" disabled={cancelling} onClick={cancel}>{cancelling ? '正在停止…' : '取消'}</Button>}</div>
+            <section className="panel compact-panel"><p className="step">05 · 求解目标与时间</p><h3>尽可能多的额外魔法</h3><label className="attempt-time" htmlFor="attempt-seconds">尝试时间 <Input id="attempt-seconds" type="number" min={1} max={120} step={1} value={timeoutSeconds} disabled={solving} onChange={(event) => setTimeoutSeconds(event.target.value)} aria-describedby="attempt-time-help" /><span>秒</span></label><p id="attempt-time-help" className="helper">默认 10 秒，可设 1–120 秒。先找合法配装，再持续增加额外魔法；到时保留最佳方案。首次下载与初始化不计入时间。</p>{!validTime && <p className="helper time-error" role="alert">请输入 1–120 的整数。</p>}<p className="helper">升级、购买和属性值用于比较候选，不保证这些指标最优。</p></section>
+            <div className="solve-actions"><button className="solve-button" disabled={solving || (mustHave.length === 0 && mustHaveQuartz.length === 0) || !validTime} onClick={runSolver}><Sparkles size={18} />{solving ? '正在尝试改善配装…' : '开始求解'}<span>{timeoutSeconds || '10'} 秒</span></button>{solving && <Button variant="outline" disabled={cancelling} onClick={cancel}>{cancelling ? '正在停止…' : '取消'}</Button>}</div>
         </div>
         <ResultsSection progress={solveProgress} elapsedMs={solveElapsed} cancelling={cancelling} result={solveResult} expanded={expandedBuild} setExpanded={setExpandedBuild} character={character} policies={policies} quartzNames={quartzNames} artById={artById} mustHave={mustHave} onEquip={applyBuild} />
       </>}
@@ -265,13 +280,40 @@ export default function Home() {
   </main>;
 }
 
+function QuartzPicker({ quartz, mustHave, toggleQuartz, clearSelection, search, setSearch }: { quartz: GameData['quartz']; mustHave: string[]; toggleQuartz: (id: string) => void; clearSelection: () => void; search: string; setSearch: (value: string) => void }) {
+  const [expandedGroups, setExpandedGroups] = useState<QuartzGroupId[]>(QUARTZ_GROUPS);
+  const groupLabel = (id: QuartzGroupId) => id === 'none' ? '无元素' : `${ELEMENT_LABELS[id]}属性`;
+  const shown = [...quartz].sort(compareQuartzBySeriesLevelName).filter((item) => `${item.name}${item.family ?? ''}${groupLabel(getQuartzGroup(item))}${item.notes ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const groups = groupQuartzForInventory(shown);
+  return <section className="panel compact-panel arts-picker quartz-picker">
+    <div className="panel-heading tight"><div><p className="step">03 · 必须回路</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={clearSelection} aria-label="清空必须回路">清空</button>}</div>
+    <div className="search-box"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setExpandedGroups(QUARTZ_GROUPS); }} placeholder="搜索回路名称、系列或分组" aria-label="搜索必须回路" /></div>
+    <p className="art-group-help">按回路所属系列分组，点击标题可折叠或展开。每种所选回路必须装备一颗，仍遵守回路来源和装备限制。</p>
+    <div className="arts-list">
+      {groups.length === 0 ? <p className="arts-empty" role="status">没有匹配的回路，请尝试其他关键词。</p> : <Accordion className="art-groups" multiple value={expandedGroups} onValueChange={(value) => setExpandedGroups(value as QuartzGroupId[])}>
+        {groups.map((group) => {
+          const selectedCount = group.quartz.filter((item) => mustHave.includes(item.id)).length;
+          return <AccordionItem key={group.id} value={group.id} className="art-group">
+            <AccordionTrigger className="art-group-trigger" aria-label={`${groupLabel(group.id)}回路分组，${group.quartz.length}项，已选${selectedCount}项`}>
+              <span className="art-group-label"><span className={`element-token el-${group.id}`}>{groupLabel(group.id)}</span><span className="art-group-count">{group.quartz.length} 项{selectedCount > 0 ? ` · 已选 ${selectedCount}` : ''}</span></span>
+            </AccordionTrigger>
+            <AccordionContent className="art-group-content">
+              <div className="art-group-options">{group.quartz.map((item) => <button type="button" key={item.id} className={`art-option ${mustHave.includes(item.id) ? 'selected' : ''}`} onClick={() => toggleQuartz(item.id)} aria-label={`${item.name}必须装备`} aria-pressed={mustHave.includes(item.id)}><span className="check-box" aria-hidden="true">{mustHave.includes(item.id) && <Check size={14} />}</span><span><b>{item.name}</b><small>{item.quartzLevel == null ? '装备等级未录入' : `Lv${item.quartzLevel}`} · <ElementSummary values={item.elements} elementOrder={getQuartzDisplayElements(item)} /></small></span></button>)}</div>
+            </AccordionContent>
+          </AccordionItem>;
+        })}
+      </Accordion>}
+    </div>
+  </section>;
+}
+
 function ArtsPicker({ arts, mustHave, toggleArt, clearSelection, search, setSearch }: { arts: GameData['arts']; mustHave: string[]; toggleArt: (id: string) => void; clearSelection: () => void; search: string; setSearch: (value: string) => void }) {
   const [expandedGroups, setExpandedGroups] = useState<ArtGroupId[]>(ART_GROUPS);
   const groupLabel = (id: ArtGroupId) => id === 'none' ? '无元素' : `${ELEMENT_LABELS[id]}属性`;
   const shown = arts.filter((art) => `${art.name}${art.category}${art.range ?? ''}${art.effects?.join('') ?? ''}${groupLabel(getArtGroup(art))}`.toLowerCase().includes(search.trim().toLowerCase()));
   const groups = groupArtsByFirstElement(shown);
   return <section className="panel compact-panel arts-picker">
-    <div className="panel-heading tight"><div><p className="step">03 · 必须魔法</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={clearSelection} aria-label="清空必须魔法">清空</button>}</div>
+    <div className="panel-heading tight"><div><p className="step">04 · 必须魔法</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={clearSelection} aria-label="清空必须魔法">清空</button>}</div>
     <div className="search-box"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setExpandedGroups(ART_GROUPS); }} placeholder="搜索魔法名称、类型或分组" aria-label="搜索必须魔法" /></div>
     <p className="art-group-help">按需求中的第一个元素分组，点击分组标题可折叠或展开。</p>
     <div className="arts-list">
@@ -295,8 +337,8 @@ function ArtsPicker({ arts, mustHave, toggleArt, clearSelection, search, setSear
 function ResultsSection({ progress, elapsedMs, cancelling, result, expanded, setExpanded, character, policies, quartzNames, artById, mustHave, onEquip }: { progress: SolveProgress | null; elapsedMs: number; cancelling: boolean; result: SolveResult | null; expanded: number; setExpanded: (index: number) => void; character: Character; policies: Record<number, SlotPolicy>; quartzNames: Record<string, string>; artById: Record<string, GameData['arts'][number]>; mustHave: string[]; onEquip: (build: Build) => void }) {
   return <section id="results" className="results-section">
     {progress && <div className="solver-progress" role="status" aria-live="polite"><div><p className="step">{progress.phase === 'initializing' ? '准备求解器' : '正在尝试'}</p><h2>{cancelling ? '正在停止，保留当前最佳方案…' : progress.message}</h2></div>{progress.phase === 'searching' && <><div className="search-progress-metrics"><Metric value={progress.bestExtraArtsCount ?? '—'} label="最佳额外魔法" /><Metric value={progress.target} label="本次要求至少" /><Metric value={`${(elapsedMs / 1000).toFixed(1)} / ${progress.budgetMs / 1000} 秒`} label="尝试时间" /></div><progress value={elapsedMs} max={progress.budgetMs} aria-label="已使用尝试时间" /></>}</div>}
-    {!result && !progress && <div className="results-preview"><div><p className="step">求解结果</p><h2>准备就绪</h2><p>选择目标魔法后，系统会先寻找满足全部目标的配装，再在尝试时间内持续增加额外魔法。</p></div><div className="preview-metrics"><Metric value={character.slots.length} label="物理槽位" /><Metric value={character.lines.length} label="条连线" /><Metric value="10 秒" label="默认尝试时间" /></div></div>}
-    {result && result.status !== 'solved' && <div className="empty-result"><span><X size={22} /></span><div><p className="step">{result.status === 'no_solution' ? '没有合法方案' : result.status === 'cancelled' ? '已取消' : result.status === 'unknown' ? '本次尝试未找到方案' : '求解失败'}</p><h2>{result.message}</h2><p>{result.status === 'no_solution' ? '建议允许更多槽位升级、切换到商店模式，或减少必须魔法。' : result.status === 'unknown' ? '可以增加尝试时间，或调整目标与资源后重试；本次尝试不代表无解。' : result.status === 'cancelled' ? '可以调整条件或再次开始求解。' : '请检查错误提示后重试；此结果不代表当前配置无解。'}</p></div></div>}
+    {!result && !progress && <div className="results-preview"><div><p className="step">求解结果</p><h2>准备就绪</h2><p>选择必须回路或必须魔法后，系统会先寻找满足全部目标的配装，再在尝试时间内持续增加额外魔法。</p></div><div className="preview-metrics"><Metric value={character.slots.length} label="物理槽位" /><Metric value={character.lines.length} label="条连线" /><Metric value="10 秒" label="默认尝试时间" /></div></div>}
+    {result && result.status !== 'solved' && <div className="empty-result"><span><X size={22} /></span><div><p className="step">{result.status === 'no_solution' ? '没有合法方案' : result.status === 'cancelled' ? '已取消' : result.status === 'unknown' ? '本次尝试未找到方案' : '求解失败'}</p><h2>{result.message}</h2><p>{result.status === 'no_solution' ? '建议允许更多槽位升级、切换到商店模式，或减少必须回路和必须魔法。' : result.status === 'unknown' ? '可以增加尝试时间，或调整目标与资源后重试；本次尝试不代表无解。' : result.status === 'cancelled' ? '可以调整条件或再次开始求解。' : '请检查错误提示后重试；此结果不代表当前配置无解。'}</p></div></div>}
     {result?.status === 'solved' && <><div className="results-title"><div><p className="step">求解结果</p><h2>{result.message}</h2></div><span>{result.attempts} 次求解 · {(result.elapsedMs / 1000).toFixed(2)} 秒</span></div><p className="helper">装备将替换当前配装并应用方案的槽位等级。库存不足时，请先手动补充库存或让队友脱下，再重新求解。</p><p className="helper">以下为持续改善过程中找到的候选，额外魔法更多的方案排在前面；不是全部配装的前 20 名。</p><div className="build-list">{result.builds.map((build, index) => <article key={index} className={`build-card ${expanded === index ? 'expanded' : ''}`}>
       <div className="build-card-header"><button className="build-summary" onClick={() => setExpanded(index)}><span className="build-rank">#{index + 1}</span><div><b>{build.metrics.upgradeSteps === 0 && build.metrics.purchasedCount === 0 ? '无需额外资源' : `${build.metrics.upgradeSteps} 步升级 · ${build.metrics.purchasedCount} 颗购买`}</b><small>{build.metrics.extraArtsCount} 个额外魔法 · ATS +{build.metrics.ats} · SPD +{build.metrics.spd}</small></div><div className="summary-metrics"><Metric value={build.metrics.purchaseCost.toLocaleString()} label="购买成本" /><ChevronDown size={18} /></div></button><Button className="equip-button" disabled={Boolean(progress)} onClick={() => onEquip(build)} aria-label={`将方案 ${index + 1} 装备给${character.name}`}><Gem size={15} />装备</Button></div>
       {expanded === index && <BuildDetails build={build} character={character} policies={policies} quartzNames={quartzNames} artById={artById} mustHave={mustHave} />}

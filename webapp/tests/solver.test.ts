@@ -7,7 +7,7 @@ const elements = (values: Partial<Record<ElementKey, number>>) => ({ ...emptyEle
 const q = (id: string, values: Partial<Record<ElementKey, number>>, level = 1, family: string | null = null, uniqueEquip = false): Quartz => ({ id, name: id, family, quartzLevel: level, elements: elements(values), stats: {}, tags: [], uniqueEquip });
 const art = (id: string, values: Partial<Record<ElementKey, number>>): Art => ({ id, name: id, requirements: elements(values), epCost: 0, category: 'test' });
 
-function request(options: { character?: Character; quartz?: Quartz[]; arts?: Art[]; must?: string[]; owned?: Record<string, number>; shop?: string[]; mode?: 'owned_only' | 'owned_plus_shop'; upgrades?: Record<number, number> } = {}): SolveRequest {
+function request(options: { character?: Character; quartz?: Quartz[]; arts?: Art[]; must?: string[]; mustQuartz?: string[]; owned?: Record<string, number>; shop?: string[]; mode?: 'owned_only' | 'owned_plus_shop'; upgrades?: Record<number, number> } = {}): SolveRequest {
   const character = options.character ?? { id: 'toy', name: 'Toy', slots: [0, 1, 2].map((id) => ({ id, x: id * 20, y: 50, currentLevel: 1, maxGameLevel: 3, restriction: null })), lines: [{ id: 'L1', name: 'L1', slots: [0, 1, 2] }] };
   const quartz = options.quartz ?? [q('water', { water: 3 })];
   const arts = options.arts ?? [art('tear', { water: 3 })];
@@ -17,6 +17,7 @@ function request(options: { character?: Character; quartz?: Quartz[]; arts?: Art
     resourceMode: options.mode ?? 'owned_only',
     slotPolicies: Object.fromEntries(character.slots.map((slot) => [slot.id, { currentLevel: slot.currentLevel, allowUpgrade: options.upgrades?.[slot.id] != null, maxLevel: options.upgrades?.[slot.id] ?? slot.currentLevel }])),
     mustHaveArts: options.must ?? arts.map((item) => item.id), rankingPreset: 'resource', maxResults: 20, timeoutMs: 5000,
+    mustHaveQuartz: options.mustQuartz,
   };
 }
 
@@ -259,4 +260,67 @@ test('cancellation preserves a candidate and does not claim optimality', async (
   const result = await solveOrbment(request(), { signal: controller.signal, onCandidate: () => controller.abort() });
   assert.equal(result.status, 'solved'); assert.equal(result.stopReason, 'cancelled');
   assert.ok(result.builds.length > 0); assert.equal(result.extraArtsOptimal, false);
+});
+
+test('every streamed improvement equips required quartz even when it reduces extra arts', async () => {
+  const r = request({ quartz: [q('water', { water: 3 }), q('utility', {}), q('fire', { fire: 3 }), q('time', { time: 3 })],
+    arts: [art('goal', { water: 3 }), art('extra-fire', { fire: 3 }), art('extra-time', { time: 3 })], must: ['goal'], mustQuartz: ['utility'] });
+  let candidates = 0;
+  const check = (result: Awaited<ReturnType<typeof solveOrbment>>) => {
+    for (const build of result.builds) assert.ok(Object.values(build.assignments).includes('utility'));
+  };
+  const result = await solveOrbment(r, { onCandidate: candidate => { candidates++; check(candidate); } });
+  assert.equal(result.status, 'solved'); assert.ok(candidates > 0); check(result);
+  assert.equal(result.builds[0].metrics.extraArtsCount, 1); assert.equal(result.extraArtsOptimal, true);
+});
+test('required quartz can be the only goal and duplicate IDs do not request extra copies', async () => {
+  const result = await solveOrbment(request({ quartz: [q('utility', {})], arts: [], must: [], mustQuartz: ['utility', 'utility'] }));
+  assert.equal(result.status, 'solved');
+  assert.equal(Object.values(result.builds[0].assignments).filter(id => id === 'utility').length, 1);
+});
+test('required quartz obey stock and shop availability rather than disappearing from a solution', async () => {
+  const options = { quartz: [q('water', { water: 3 }), q('utility', {})], mustQuartz: ['utility'], owned: { utility: 0 }, shop: ['utility'] };
+  assert.equal((await solveOrbment(request(options))).status, 'no_solution');
+  const result = await solveOrbment(request({ ...options, mode: 'owned_plus_shop' }));
+  assert.equal(result.status, 'solved'); assert.equal(result.builds[0].purchases.utility, 1);
+});
+test('required quartz obey teammate reservations and can reuse the current character equipment', async () => {
+  const r = request({ mustQuartz: ['water'] }); r.resourceMode = 'available_only';
+  r.equipment = { teammate: { 0: 'water' } };
+  assert.equal((await solveOrbment(r)).status, 'no_solution');
+  r.resourceMode = 'owned_only'; assert.equal((await solveOrbment(r)).status, 'solved');
+  r.resourceMode = 'available_only'; r.equipment = { toy: { 0: 'water' } };
+  assert.equal((await solveOrbment(r)).status, 'solved');
+});
+test('required quartz cannot be replaced by a lower-level alternative and needs permitted upgrades', async () => {
+  const options = { quartz: [q('advanced', { water: 3 }, 2), q('basic', { water: 3 })], mustQuartz: ['advanced'] };
+  assert.equal((await solveOrbment(request(options))).status, 'no_solution');
+  const result = await solveOrbment(request({ ...options, upgrades: { 2: 2 } }));
+  assert.equal(result.status, 'solved'); assert.equal(result.builds[0].assignments[2], 'advanced');
+  assert.equal(result.builds[0].slotFinalLevels[2], 2);
+});
+test('required quartz obey slot element restrictions', async () => {
+  const character = request().character;
+  character.slots.forEach(slot => { slot.restriction = 'water'; });
+  const result = await solveOrbment(request({ character, quartz: [q('water', { water: 3 }), q('wind', { wind: 3 })], mustQuartz: ['wind'] }));
+  assert.equal(result.status, 'no_solution');
+});
+test('required quartz conflicts still enforce normalized names, families and line quotas', async () => {
+  for (const conflict of ['name', 'family', 'blade']) {
+    const first = q('first', {}), second = q('second', {});
+    if (conflict === 'name') { first.name = '驱动1'; second.name = ' 驱动１ '; }
+    if (conflict === 'family') first.family = second.family = 'cast';
+    if (conflict === 'blade') { first.name = '毒之刃'; second.name = '冻结之刃'; }
+    const result = await solveOrbment(request({ quartz: [first, second], arts: [], must: [], mustQuartz: ['first', 'second'] }));
+    assert.equal(result.status, 'no_solution', conflict);
+  }
+});
+test('required quartz do not exceed physical slot capacity', async () => {
+  const quartz = ['a', 'b', 'c', 'd'].map(id => q(id, {}));
+  assert.equal((await solveOrbment(request({ quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id) }))).status, 'no_solution');
+});
+test('unknown required quartz and empty goals are reported as request errors', async () => {
+  const invalid = await solveOrbment(request({ mustQuartz: ['missing'] }));
+  assert.equal(invalid.status, 'invalid_request'); assert.match(invalid.message, /不存在的必须回路/);
+  assert.equal((await solveOrbment(request({ must: [], mustQuartz: [] }))).status, 'invalid_request');
 });
