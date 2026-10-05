@@ -270,7 +270,7 @@ export default function Home() {
               <button className={`radio-row ${resourceMode === 'owned_plus_shop' ? 'selected' : ''}`} onClick={() => setResourceMode('owned_plus_shop')}><i />已拥有 + 商店<span>{Object.values(player.resources).filter((item) => item.ownedCount > 0 || item.shopAvailable).length} 种可用</span></button>
               <p className="helper">{resourceMode === 'available_only' ? '排除队友装备的回路；当前角色的装备可复用。' : '按总拥有数规划，包含队友装备的回路；实际装备时仍需有可用库存。'}</p>
             </section>
-            <QuartzPicker quartz={gameData.quartz} mustHave={mustHaveQuartz} toggleQuartz={toggleQuartz} clearSelection={() => setMustHaveQuartz([])} search={quartzSearch} setSearch={setQuartzSearch} />
+            <QuartzPicker quartz={gameData.quartz} resources={player.resources} teammateCounts={teammateCounts} mustHave={mustHaveQuartz} toggleQuartz={toggleQuartz} clearSelection={() => setMustHaveQuartz([])} search={quartzSearch} setSearch={setQuartzSearch} />
             <ArtsPicker arts={gameData.arts} mustHave={mustHave} toggleArt={toggleArt} clearSelection={() => setMustHave([])} search={artSearch} setSearch={setArtSearch} />
             <section className="panel compact-panel"><p className="step">05 · 求解目标与时间</p><h3>尽可能多的额外魔法</h3><label className="attempt-time" htmlFor="attempt-seconds">尝试时间 <Input id="attempt-seconds" type="number" min={1} max={120} step={1} value={timeoutSeconds} disabled={solving} onChange={(event) => setTimeoutSeconds(event.target.value)} aria-describedby="attempt-time-help" /><span>秒</span></label><p id="attempt-time-help" className="helper">默认 10 秒，可设 1–120 秒。先找合法配装，再持续增加额外魔法；到时保留最佳方案。首次下载与初始化不计入时间。</p>{!validTime && <p className="helper time-error" role="alert">请输入 1–120 的整数。</p>}<p className="helper">升级、购买和属性值用于比较候选，不保证这些指标最优。</p></section>
             <div className="solve-actions"><button className="solve-button" disabled={solving || (mustHave.length === 0 && mustHaveQuartz.length === 0) || !validTime} onClick={runSolver}><Sparkles size={18} />{solving ? '正在尝试改善配装…' : '开始求解'}<span>{timeoutSeconds || '10'} 秒</span></button>{solving && <Button variant="outline" disabled={cancelling} onClick={cancel}>{cancelling ? '正在停止…' : '取消'}</Button>}</div>
@@ -287,7 +287,7 @@ export default function Home() {
   </main>;
 }
 
-function QuartzPicker({ quartz, mustHave, toggleQuartz, clearSelection, search, setSearch }: { quartz: GameData['quartz']; mustHave: string[]; toggleQuartz: (id: string) => void; clearSelection: () => void; search: string; setSearch: (value: string) => void }) {
+function QuartzPicker({ quartz, resources, teammateCounts, mustHave, toggleQuartz, clearSelection, search, setSearch }: { quartz: GameData['quartz']; resources: PlayerState['resources']; teammateCounts: Record<string, number>; mustHave: string[]; toggleQuartz: (id: string) => void; clearSelection: () => void; search: string; setSearch: (value: string) => void }) {
   const [expandedGroups, setExpandedGroups] = useState<QuartzGroupId[]>(QUARTZ_GROUPS);
   const groupLabel = (id: QuartzGroupId) => id === 'none' ? '无元素' : `${ELEMENT_LABELS[id]}属性`;
   const shown = [...quartz].sort(compareQuartzBySeriesLevelName).filter((item) => `${item.name}${item.family ?? ''}${groupLabel(getQuartzGroup(item))}${item.notes ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()));
@@ -296,6 +296,7 @@ function QuartzPicker({ quartz, mustHave, toggleQuartz, clearSelection, search, 
     <div className="panel-heading tight"><div><p className="step">03 · 必须回路</p><h3>已选择 {mustHave.length} 项</h3></div>{mustHave.length > 0 && <button className="text-button" onClick={clearSelection} aria-label="清空必须回路">清空</button>}</div>
     <div className="search-box"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setExpandedGroups(QUARTZ_GROUPS); }} placeholder="搜索回路名称、系列或分组" aria-label="搜索必须回路" /></div>
     <p className="art-group-help">按回路所属系列分组，点击标题可折叠或展开。每种所选回路必须装备一颗，仍遵守回路来源和装备限制。</p>
+    <p className="art-group-help">可使用数扣除队友装备，包含当前角色可复用的回路；当前库存为总拥有数。</p>
     <div className="arts-list">
       {groups.length === 0 ? <p className="arts-empty" role="status">没有匹配的回路，请尝试其他关键词。</p> : <Accordion className="art-groups" multiple value={expandedGroups} onValueChange={(value) => setExpandedGroups(value as QuartzGroupId[])}>
         {groups.map((group) => {
@@ -305,7 +306,15 @@ function QuartzPicker({ quartz, mustHave, toggleQuartz, clearSelection, search, 
               <span className="art-group-label"><span className={`element-token el-${group.id}`}>{groupLabel(group.id)}</span><span className="art-group-count">{group.quartz.length} 项{selectedCount > 0 ? ` · 已选 ${selectedCount}` : ''}</span></span>
             </AccordionTrigger>
             <AccordionContent className="art-group-content">
-              <div className="art-group-options">{group.quartz.map((item) => <button type="button" key={item.id} className={`art-option ${mustHave.includes(item.id) ? 'selected' : ''}`} onClick={() => toggleQuartz(item.id)} aria-label={`${item.name}必须装备`} aria-pressed={mustHave.includes(item.id)}><span className="check-box" aria-hidden="true">{mustHave.includes(item.id) && <Check size={14} />}</span><span><b>{item.name}</b><small>{item.quartzLevel == null ? '装备等级未录入' : `Lv${item.quartzLevel}`} · <ElementSummary values={item.elements} elementOrder={getQuartzDisplayElements(item)} /></small></span></button>)}</div>
+              <div className="art-group-options">{group.quartz.map((item) => {
+                const ownedCount = resources[item.id]?.ownedCount ?? 0;
+                const availableCount = Math.max(0, ownedCount - (teammateCounts[item.id] ?? 0));
+                const stockId = `required-quartz-stock-${item.id}`;
+                return <button type="button" key={item.id} className={`art-option ${mustHave.includes(item.id) ? 'selected' : ''}`} onClick={() => toggleQuartz(item.id)} aria-label={`${item.name}必须装备`} aria-describedby={stockId} aria-pressed={mustHave.includes(item.id)}>
+                  <span className="check-box" aria-hidden="true">{mustHave.includes(item.id) && <Check size={14} />}</span>
+                  <span><b>{item.name}</b><small>{item.quartzLevel == null ? '装备等级未录入' : `Lv${item.quartzLevel}`} · <ElementSummary values={item.elements} elementOrder={getQuartzDisplayElements(item)} /></small><span id={stockId} className="quartz-stock"><span>可使用 <strong>{availableCount}</strong></span><span>当前库存 <strong>{ownedCount}</strong></span></span></span>
+                </button>;
+              })}</div>
             </AccordionContent>
           </AccordionItem>;
         })}

@@ -108,6 +108,8 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: clamp(24px, 3
 .arts-picker .art-option b { font-size: 14px; }
 .arts-picker .art-option small { font-size: 12px; line-height: 1.6; }
 .arts-picker .art-option .element-token { font-size: 11px; }
+.quartz-stock { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 5px; color: #657870; font-size: 12px; font-variant-numeric: tabular-nums; }
+.quartz-stock > span { white-space: nowrap; }
 .arts-picker .check-box { width: 20px; height: 20px; }
 .arts-empty { padding: 30px 10px; text-align: center; color: #7f8c88; }
 @media (max-width: 760px) { .art-group-options { grid-template-columns: minmax(0, 1fr); } }
