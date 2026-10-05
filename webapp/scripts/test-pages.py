@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import threading
+import unicodedata
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -60,13 +61,30 @@ with tempfile.TemporaryDirectory(prefix="orbment-pages-") as directory:
             expect(page.locator(".build-card").first).to_be_visible(timeout=60_000)
             expect(page.get_by_role("button", name=re.compile("开始求解"))).to_be_enabled(timeout=30_000)
             assert page.locator(".empty-result").count() == 0, page.locator("#results").inner_text()
+            # Check every displayed improvement, including legacy data with null family fields.
+            for card in page.locator(".build-card").all():
+                card.locator(".build-summary").click()
+                names = card.locator(".detail-row b").all_text_contents()
+                assert len(names) == 7, names
+                families = []
+                for name in names:
+                    match = re.fullmatch(r"(.*?)\s*[0-9]+", unicodedata.normalize("NFKC", name.strip()))
+                    if match and match[1].strip():
+                        families.append(match[1].strip().lower())
+                assert len(families) == len(set(families)), names
             # Revisit with the existing Service Worker and persisted player state.
             page.reload()
             page.wait_for_function("window.crossOriginIsolated", timeout=30_000)
             expect(page.get_by_role("combobox", name="选择角色")).to_have_value("kloe")
+            # Requiring both drive levels must fail rather than show an illegal build.
+            for name in ["驱动2", "驱动3"]:
+                page.get_by_role("button", name=f"{name}必须装备", exact=True).click()
+            page.get_by_role("button", name=re.compile("开始求解")).click()
+            expect(page.locator(".empty-result")).to_contain_text("没有合法方案", timeout=30_000)
+            expect(page.locator(".build-card")).to_have_count(0)
             assert not errors, errors
             assert not failures, failures
-            print("Pages browser check passed: subpath assets, first-visit isolation, Z3 solving and saved state.")
+            print("Pages browser check passed: subpath assets, first-visit isolation, Z3 solving, quartz family exclusions and saved state.")
             browser.close()
     finally:
         server.shutdown()

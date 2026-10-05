@@ -1,5 +1,5 @@
 import type { Build, Character, GameData, PlayerState, Quartz, QuartzResource } from './domain.ts';
-import { getCentralSlotId, getQuartzLineType, type QuartzLineType } from './quartz-rules.ts';
+import { getCentralSlotId, getQuartzLevelFamily, getQuartzLineType, type QuartzLineType } from './quartz-rules.ts';
 import { getQuartzSeries } from './quartz-series.ts';
 
 export function getEquippedCounts(equipment: PlayerState['equipment'] = {}, excludeCharacterId?: string): Record<string, number> {
@@ -52,6 +52,7 @@ export function equipBuild(player: PlayerState, character: Character, quartz: Qu
   const usage: Record<string, number> = {};
   const names = new Set<string>();
   const families = new Set<string>();
+  const levelFamilies = new Set<string>();
   const lineTypes = character.lines.map(() => new Set<QuartzLineType>());
   const centralSlotId = getCentralSlotId(character);
   const levels = { ...player.slotLevels[character.id] };
@@ -68,9 +69,11 @@ export function equipBuild(player: PlayerState, character: Character, quartz: Qu
     if (!item || !player.resources[quartzId]) return fail('方案中存在已删除的回路，请重新求解。');
     if ((item.quartzLevel ?? 1) > level || (slot.restriction && getQuartzSeries(item) !== slot.restriction)) return fail('方案不符合当前槽位限制，请重新求解。');
     const name = item.name.trim().normalize('NFKC').toLocaleLowerCase('zh-CN') || item.id;
-    if (names.has(name) || (item.family && families.has(item.family))) return fail('方案中的回路存在重复或互斥，请重新求解。');
+    const levelFamily = getQuartzLevelFamily(item);
+    if (names.has(name) || (item.family && families.has(item.family)) || (levelFamily && levelFamilies.has(levelFamily))) return fail('方案中的回路存在重复或互斥，请重新求解。');
     names.add(name);
     if (item.family) families.add(item.family);
+    if (levelFamily) levelFamilies.add(levelFamily);
     const type = getQuartzLineType(item);
     if (type && slot.id !== centralSlotId) {
       for (let index = 0; index < character.lines.length; index += 1) {

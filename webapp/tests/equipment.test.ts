@@ -171,3 +171,24 @@ test('equip rejects outdated quartz, slot restrictions, duplicate names and line
   assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 13: 'water', 42: 'wind' })).ok, false);
   assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 9: 'water', 13: 'wind' })).ok, true, 'central quota is independent');
 });
+
+test('equip rejects different levels of one family atomically, including stale candidates and the center', () => {
+  const { game, player } = fixture();
+  game.quartz[0].name = '驱动2'; game.quartz[1].name = ' 驱动３ ';
+  game.quartz[0].family = 'custom-a'; game.quartz[1].family = 'custom-b';
+  player.equipment.alice[42] = 'advanced';
+  const before = JSON.stringify(player);
+  const result = equipBuild(player, game.characters[0], game.quartz, build({ 9: 'water', 13: 'wind' }, { 9: 2, 13: 1, 42: 1 }));
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /互斥/);
+  assert.equal(JSON.stringify(player), before);
+});
+
+test('equip allows one level per family and permits other characters to use another level', () => {
+  const { game, player } = fixture();
+  game.quartz[0].name = '驱动1'; game.quartz[1].name = '驱动2'; game.quartz[2].name = '精神2';
+  const alice = equip(player, game, 'alice', build({ 9: 'water', 42: 'advanced' }, { 9: 1, 13: 1, 42: 2 }));
+  const both = equip(alice, game, 'bob', build({ 9: 'wind' }));
+  assert.equal(both.equipment.alice[9], 'water');
+  assert.equal(both.equipment.bob[9], 'wind');
+});

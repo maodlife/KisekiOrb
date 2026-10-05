@@ -8,6 +8,13 @@ const SUFFIX_TYPES: Record<string, QuartzLineType> = {
   理: 'reason',
 };
 
+// Names carry the series rank, which is independent of the slot's required level.
+// Infer at use time so legacy local data and imported backups obey the same rule.
+export function getQuartzLevelFamily(quartz: Pick<Quartz, 'name'>): string | null {
+  const base = quartz.name.trim().normalize('NFKC').match(/^(.*?)\s*\d+$/u)?.[1].trim();
+  return base ? base.toLocaleLowerCase('zh-CN') : null;
+}
+
 // Infer from names so existing browser data and imported backups follow the rule too.
 export function getQuartzLineType(quartz: Pick<Quartz, 'name'>): QuartzLineType | null {
   const suffix = quartz.name.trim().normalize('NFKC').match(/之([刃盾理])(?:\s*\d+)?$/u)?.[1];

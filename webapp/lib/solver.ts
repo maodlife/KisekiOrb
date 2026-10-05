@@ -1,7 +1,7 @@
 import type { Bool, Model, init } from 'z3-solver';
 import { getQuartzSeries } from './quartz-series.ts';
 import { getEquippedCounts } from './equipment.ts';
-import { getCentralSlotId, getQuartzLineType } from './quartz-rules.ts';
+import { getCentralSlotId, getQuartzLevelFamily, getQuartzLineType } from './quartz-rules.ts';
 import { ELEMENTS as elements, type Quartz, type Slot, type SolveRequest, type SolveResult, type SolveProgress, type SolveStopReason, type Build, type ElementValues } from './domain.ts';
 export type SolverApi = Pick<Awaited<ReturnType<typeof init>>, 'Context'>;
 type EquivalentGroup = { slots: Slot[]; costs: (number | null)[]; memberships: number[] };
@@ -82,10 +82,10 @@ export async function solveOrbment(api: SolverApi, request: SolveRequest, { onCa
       const xs = used[quartz.findIndex(q => q.id === id)];
       solver.add(xs.length ? Or(...xs) : Bool.val(false));
     }
-    for (const field of ['name', 'family']) {
+    for (const keyForQuartz of [nameKey, (q: Quartz) => q.family, getQuartzLevelFamily]) {
       const sets = new Map<string, Bool<'orbment'>[]>();
       quartz.forEach((q, i) => {
-        const key = field === 'name' ? nameKey(q) : q.family;
+        const key = keyForQuartz(q);
         if (key) sets.set(key, [...(sets.get(key) ?? []), ...used[i]]);
       });
       for (const xs of sets.values()) atMost(xs, 1);

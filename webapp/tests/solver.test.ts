@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyElements, type Art, type Character, type ElementKey, type Quartz, type SolveRequest } from '../lib/domain.ts';
 import { solveOrbment } from './solver-api.ts';
+import { DEFAULT_GAME_DATA } from '../lib/default-data.ts';
+import { getQuartzLevelFamily } from '../lib/quartz-rules.ts';
 
 const elements = (values: Partial<Record<ElementKey, number>>) => ({ ...emptyElements(), ...values });
 const q = (id: string, values: Partial<Record<ElementKey, number>>, level = 1, family: string | null = null, uniqueEquip = false): Quartz => ({ id, name: id, family, quartzLevel: level, elements: elements(values), stats: {}, tags: [], uniqueEquip });
@@ -120,6 +122,45 @@ test('family and unique rules are enforced', async () => {
   const quartz = [q('mind1', { water: 2 }, 1, 'mind'), q('mind2', { water: 2 }, 1, 'mind'), q('unique', { water: 1 }, 1, null, true)];
   const result = (await solveOrbment(request({ character, quartz, arts: [art('tear', { water: 5 })], owned: { mind1: 1, mind2: 1, unique: 2 } })));
   assert.equal(result.status, 'no_solution');
+});
+
+test('different drive levels conflict across lines and the central slot in owned and shop modes', async () => {
+  const character = request().character;
+  character.centralSlotId = 0;
+  character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }, { id: 'L2', name: 'L2', slots: [0, 2] }];
+  for (const names of [['驱动1', '驱动2'], ['驱动2', '驱动3'], ['驱动1', ' 驱动４ ']]) {
+    const quartz = names.map((name, index) => ({ ...q(`drive-${index}`, { time: 2 }), name }));
+    for (const mode of ['owned_only', 'owned_plus_shop'] as const) {
+      const result = await solveOrbment(request({ character, quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id),
+        mode, owned: mode === 'owned_only' ? undefined : { 'drive-0': 0, 'drive-1': 0 }, shop: quartz.map(item => item.id) }));
+      assert.equal(result.status, 'no_solution', `${names.join(' + ')} (${mode})`);
+    }
+  }
+});
+
+test('leveled quartz stay mutually exclusive even with different explicit families', async () => {
+  const quartz = [{ ...q('first', { water: 2 }, 1, 'custom-a'), name: '精神1' }, { ...q('second', { water: 2 }, 1, 'custom-b'), name: '精神2' }];
+  assert.equal((await solveOrbment(request({ quartz, arts: [art('tear', { water: 4 })] }))).status, 'no_solution');
+});
+
+test('different leveled families can coexist', async () => {
+  const quartz = [{ ...q('ep', { mirage: 2 }), name: 'EP 1' }, { ...q('save-ep', { space: 2 }), name: '省EP 2' }];
+  const result = await solveOrbment(request({ quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id) }));
+  assert.equal(result.status, 'solved');
+});
+
+test('screenshot-data candidates never combine levels of the same quartz family', async () => {
+  const playerCharacter = DEFAULT_GAME_DATA.characters.find(item => item.id === 'kloe')!;
+  const character = { ...playerCharacter, slots: playerCharacter.slots.map(slot => ({ ...slot, currentLevel: 3 })) };
+  const result = await solveOrbment(request({ character, quartz: DEFAULT_GAME_DATA.quartz, arts: DEFAULT_GAME_DATA.arts,
+    must: DEFAULT_GAME_DATA.arts.filter(item => ['钻石星尘', '水蓝升华'].includes(item.name)).map(item => item.id) }));
+  assert.equal(result.status, 'solved');
+  assert.ok(result.builds.length);
+  for (const build of result.builds) {
+    const equipped = DEFAULT_GAME_DATA.quartz.filter(item => Object.values(build.assignments).includes(item.id));
+    const families = equipped.map(getQuartzLevelFamily).filter(family => family !== null);
+    assert.equal(new Set(families).size, families.length, equipped.map(item => item.name).join(' + '));
+  }
 });
 
 for (const [first, second] of [['毒之刃', '冻结之刃'], ['黄玉之盾', '苍玉之盾'], ['毒之理', '冻结之理']]) {
