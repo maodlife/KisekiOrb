@@ -122,3 +122,52 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: clamp(24px, 3
 @media (max-width: 620px) { .equip-button { margin-right: 10px; } .build-card-header .build-summary { padding: 12px 10px; gap: 8px; } }
 
 .attempt-time{display:flex;align-items:center;gap:12px;margin-top:14px;font-size:13px}.attempt-time input{width:92px}.time-error{color:#bd5542}.solve-actions{display:flex;align-items:center;gap:12px}.solve-actions .solve-button{flex:1}.solver-progress{border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:18px;background:var(--card)}.solver-progress h2{font-size:18px}.search-progress-metrics{display:flex;gap:30px;flex-wrap:wrap;margin-top:18px}.solver-progress progress{width:100%;height:6px;margin-top:18px;accent-color:#8eac74}@media(max-width:600px){.search-progress-metrics{gap:18px}.solve-actions{flex-wrap:wrap}.solver-progress{padding:18px}}
+
+/* First-use guide, with screenshots shared by the app and README. */
+.usage-guide { display: grid; gap: 22px; font-size: 14px; line-height: 1.85; }
+.guide-intro { display: flex; gap: 20px; align-items: flex-start; padding: 28px; background: linear-gradient(120deg, #edf4ed, #fffdf8 72%); }
+.guide-intro-icon { flex: 0 0 auto; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 14px; color: #e8bb62; background: #183f3d; }
+.guide-intro h2 { font-size: clamp(20px, 2.2vw, 27px); line-height: 1.5; }
+.guide-intro p:not(.step) { margin: 12px 0 18px; max-width: 780px; color: #536963; }
+.guide-intro-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.guide-intro-actions > span { display: inline-flex; align-items: center; gap: 5px; color: #637a71; font-size: 12px; }
+.guide-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border: 1px solid #0e736c; border-radius: 9px; background: #0e736c; color: white; font-size: 13px; font-weight: 600; line-height: 1.6; }
+.guide-action:hover { background: #125b59; }
+.guide-action.secondary { margin-left: auto; color: #246a61; background: #eff5ee; border-color: #cdded5; }
+.guide-action.secondary:hover { background: #e2eee4; }
+.guide-contents { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.guide-contents a { display: flex; align-items: center; gap: 8px; padding: 12px 10px; border: 1px solid var(--border); border-radius: 9px; background: #fffdf8; color: #355951; text-decoration: none; font-size: 12px; line-height: 1.6; }
+.guide-contents a:hover { border-color: #7ea89b; background: #edf4ed; }
+.guide-contents a > span { color: #8a744b; font-size: 11px; font-weight: 700; }
+.guide-section { min-width: 0; padding: 28px; scroll-margin-top: 24px; }
+.guide-section-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 20px; }
+.guide-section h2 { font-size: 22px; line-height: 1.5; }
+.guide-number { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid #d5dfd5; border-radius: 50%; background: #eaf0e5; color: #34665a; font-size: 14px; font-weight: 700; }
+.guide-instructions { margin: 0 0 18px; padding-left: 24px; color: #425a53; list-style: decimal; }
+.guide-instructions li { padding-left: 5px; margin: 9px 0; }
+.guide-instructions li::marker { color: #388377; font-weight: 700; }
+.guide-section > p { color: #425a53; }
+.guide-note { display: flex; align-items: flex-start; gap: 10px; margin: 18px 0; padding: 13px 16px; border-left: 3px solid #d8ae59; border-radius: 0 8px 8px 0; background: #f5f1e6; color: #69604a; font-size: 13px; }
+.guide-note > svg { flex: 0 0 auto; margin-top: 4px; color: #9a7b38; }
+.guide-note p { margin: 0; }
+.guide-figure { margin: 22px 0 0; border: 1px solid #d9ded4; border-radius: 11px; overflow: hidden; background: #f4f1e9; }
+.guide-figure > a { display: block; }
+.guide-figure img { display: block; width: 100%; height: auto; }
+.guide-figure figcaption { padding: 11px 16px; background: #f9f8f2; color: #5f746b; font-size: 12px; }
+.guide-figure figcaption > span { display: inline-block; margin-left: 8px; color: #8a948e; font-size: 11px; }
+.guide-table-wrap { overflow-x: auto; margin: 18px 0; border: 1px solid #dce2d7; border-radius: 9px; }
+.guide-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.guide-table caption { padding: 12px 16px; text-align: left; color: #2b665a; background: #f0f5ed; font-weight: 700; }
+.guide-table th, .guide-table td { padding: 11px 16px; border-top: 1px solid #e1e5dc; }
+.guide-table th { color: #375c50; }
+.guide-table tbody th { width: 160px; }
+.guide-table td { color: #596d61; }
+.guide-faq details { padding: 15px 0; border-bottom: 1px solid #e1e3d8; }
+.guide-faq details:last-child { border-bottom: 0; padding-bottom: 0; }
+.guide-faq summary { color: #355e51; font-weight: 600; cursor: pointer; }
+.guide-faq details p { margin: 10px 0 0; color: #667569; font-size: 13px; }
+.guide-instructions code { overflow-wrap: anywhere; font-size: 12px; }
+.usage-guide :is(a, button, summary):focus-visible { outline: 2px solid #0e736c; outline-offset: 4px; }
+@media (max-width: 1100px) { .guide-contents { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .guide-intro, .guide-section { padding: 20px; }.guide-intro { gap: 14px; }.guide-intro-icon { width: 40px; height: 40px; }.guide-contents { grid-template-columns: repeat(2, minmax(0, 1fr)); }.guide-section-heading .guide-action { flex-basis: 100%; margin-left: 56px; justify-content: flex-start; width: fit-content; }.guide-section h2 { font-size: 20px; } }
+@media (max-width: 420px) { .guide-intro { display: block; }.guide-intro-icon { margin-bottom: 14px; }.guide-section, .guide-intro { padding: 16px; }.guide-section-heading { gap: 10px; }.guide-section-heading .guide-action { margin-left: 0; }.guide-table th, .guide-table td { padding: 10px; }.guide-table tbody th { width: 100px; }.guide-note { padding: 12px; }.guide-figure figcaption { padding: 10px; }.guide-intro-actions { gap: 10px; } }

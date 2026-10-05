@@ -4,7 +4,8 @@
 export const dynamic = 'force-static';
 
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
-import { Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
+import { BookOpen, Check, ChevronDown, CircleDot, Database, Download, Gem, Plus, RotateCcw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
+import { UsageGuide } from '@/components/usage-guide';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -25,13 +26,14 @@ import { useOrbmentSolver } from '@/hooks/use-orbment-solver.ts';
 
 import { loadGameData, loadPlayerState, normalizePlayerState, resetLocalData, saveGameData, savePlayerState } from '@/lib/storage.ts';
 
-type View = 'solver' | 'inventory' | 'characters' | 'data';
+type View = 'solver' | 'inventory' | 'characters' | 'data' | 'guide';
 
 const VIEW_META: Record<View, { title: string; eyebrow: string }> = {
   solver: { title: '导力器配装求解', eyebrow: 'ARTS CONSTRAINT SOLVER' },
   inventory: { title: '库存与商店', eyebrow: 'PLAYER RESOURCES' },
   characters: { title: '角色导力器', eyebrow: 'ORBMENT TOPOLOGY' },
   data: { title: '游戏数据', eyebrow: 'LOCAL GAME DATABASE' },
+  guide: { title: '使用说明', eyebrow: 'GETTING STARTED' },
 };
 
 const makePolicies = (character: Character, player: PlayerState): Record<number, SlotPolicy> => Object.fromEntries(character.slots.map((slot) => {
@@ -233,10 +235,11 @@ export default function Home() {
     <aside className="sidebar">
       <button className="brand" onClick={() => setView('solver')}><span className="brand-orb"><Sparkles size={17} /></span><span>KisekiOrb</span></button>
       <nav aria-label="主导航">
-        <button className={`nav-item ${view === 'solver' ? 'active' : ''}`} onClick={() => setView('solver')}><CircleDot size={18} /><span>求解器</span></button>
-        <button className={`nav-item ${view === 'inventory' ? 'active' : ''}`} onClick={() => setView('inventory')}><Gem size={18} /><span>库存与商店</span></button>
-        <button className={`nav-item ${view === 'characters' ? 'active' : ''}`} onClick={() => setView('characters')}><Users size={18} /><span>角色导力器</span></button>
-        <button className={`nav-item ${view === 'data' ? 'active' : ''}`} onClick={() => setView('data')}><Database size={18} /><span>游戏数据</span></button>
+        <button aria-label="求解器" title="求解器" aria-current={view === 'solver' ? 'page' : undefined} className={`nav-item ${view === 'solver' ? 'active' : ''}`} onClick={() => setView('solver')}><CircleDot size={18} /><span>求解器</span></button>
+        <button aria-label="库存与商店" title="库存与商店" aria-current={view === 'inventory' ? 'page' : undefined} className={`nav-item ${view === 'inventory' ? 'active' : ''}`} onClick={() => setView('inventory')}><Gem size={18} /><span>库存与商店</span></button>
+        <button aria-label="角色导力器" title="角色导力器" aria-current={view === 'characters' ? 'page' : undefined} className={`nav-item ${view === 'characters' ? 'active' : ''}`} onClick={() => setView('characters')}><Users size={18} /><span>角色导力器</span></button>
+        <button aria-label="游戏数据" title="游戏数据" aria-current={view === 'data' ? 'page' : undefined} className={`nav-item ${view === 'data' ? 'active' : ''}`} onClick={() => setView('data')}><Database size={18} /><span>游戏数据</span></button>
+        <button aria-label="使用说明" title="使用说明" aria-current={view === 'guide' ? 'page' : undefined} className={`nav-item ${view === 'guide' ? 'active' : ''}`} onClick={() => setView('guide')}><BookOpen size={18} /><span>使用说明</span></button>
       </nav>
       <p className="local-note"><span />数据仅保存在此设备</p>
     </aside>
@@ -278,6 +281,7 @@ export default function Home() {
       {view === 'inventory' && <InventoryView gameData={gameData} player={player} search={inventorySearch} setSearch={setInventorySearch} updateResource={updateResource} setPlayer={setPlayer} />}
       {view === 'characters' && <CharactersView gameData={gameData} character={character} player={player} switchCharacter={switchCharacter} updateSlotLevel={updateSlotLevel} patchCharacter={patchCharacter} addCharacter={addCharacter} unequip={unequip} />}
       {view === 'data' && <GameDataView gameData={gameData} setGameData={setGameData} setPlayer={setPlayer} exportAll={exportAll} importAll={importAll} resetAll={resetAll} />}
+      {view === 'guide' && <UsageGuide onNavigate={(destination) => { setView(destination); window.scrollTo(0, 0); }} />}
     </section>
     {notice && <output className="toast"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={14} /></button></output>}
   </main>;
