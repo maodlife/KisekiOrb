@@ -1,7 +1,7 @@
 import type { Bool, Model, init } from 'z3-solver';
 import { getQuartzSeries } from './quartz-series.ts';
 import { getEquippedCounts } from './equipment.ts';
-import { getCentralSlotId, getQuartzLevelFamily, getQuartzLineType } from './quartz-rules.ts';
+import { getCentralSlotId, getQuartzGlobalExclusionGroup, getQuartzLevelFamily, getQuartzLineType } from './quartz-rules.ts';
 import { ELEMENTS as elements, type Quartz, type Slot, type SolveRequest, type SolveResult, type SolveProgress, type SolveStopReason, type Build, type ElementValues } from './domain.ts';
 export type SolverApi = Pick<Awaited<ReturnType<typeof init>>, 'Context'>;
 type EquivalentGroup = { slots: Slot[]; costs: (number | null)[]; memberships: number[] };
@@ -26,7 +26,7 @@ function validateRequest(request: SolveRequest): string | null {
   return null;
 }
 
-// Swap-equivalent physical slots share variables; central exemptions stay separate.
+// Swap-equivalent physical slots share variables; retained reason rules distinguish the center.
 function equivalentGroups(request: SolveRequest, quartz: Quartz[], available: (q: Quartz) => number) {
   const lines = request.character.lines;
   const ids = new Set(request.character.slots.map(s => s.id));
@@ -82,7 +82,7 @@ export async function solveOrbment(api: SolverApi, request: SolveRequest, { onCa
       const xs = used[quartz.findIndex(q => q.id === id)];
       solver.add(xs.length ? Or(...xs) : Bool.val(false));
     }
-    for (const keyForQuartz of [nameKey, (q: Quartz) => q.family, getQuartzLevelFamily]) {
+    for (const keyForQuartz of [nameKey, (q: Quartz) => q.family, getQuartzLevelFamily, getQuartzGlobalExclusionGroup]) {
       const sets = new Map<string, Bool<'orbment'>[]>();
       quartz.forEach((q, i) => {
         const key = keyForQuartz(q);
@@ -91,8 +91,9 @@ export async function solveOrbment(api: SolverApi, request: SolveRequest, { onCa
       for (const xs of sets.values()) atMost(xs, 1);
     }
     const center = getCentralSlotId(request.character);
+    // Blade/shield center slots consume every incident line; retain existing reason behavior.
     for (const [l] of request.character.lines.entries()) for (const type of ['blade', 'shield', 'reason'] as const) {
-      const xs = groups.flatMap((group, g) => group.slots[0].id === center || !group.memberships[l] ? []
+      const xs = groups.flatMap((group, g) => !group.memberships[l] || (type === 'reason' && group.slots[0].id === center) ? []
         : quartz.flatMap((q, i) => getQuartzLineType(q) === type && vars[g][i] ? [vars[g][i]!] : []));
       atMost(xs, 1);
     }

@@ -1,5 +1,5 @@
 import type { Build, Character, GameData, PlayerState, Quartz, QuartzResource } from './domain.ts';
-import { getCentralSlotId, getQuartzLevelFamily, getQuartzLineType, type QuartzLineType } from './quartz-rules.ts';
+import { getCentralSlotId, getQuartzGlobalExclusionGroup, getQuartzLevelFamily, getQuartzLineType, type QuartzLineType } from './quartz-rules.ts';
 import { getQuartzSeries } from './quartz-series.ts';
 
 export function getEquippedCounts(equipment: PlayerState['equipment'] = {}, excludeCharacterId?: string): Record<string, number> {
@@ -54,6 +54,7 @@ export function equipBuild(player: PlayerState, character: Character, quartz: Qu
   const families = new Set<string>();
   const levelFamilies = new Set<string>();
   const lineTypes = character.lines.map(() => new Set<QuartzLineType>());
+  const globalExclusions = new Set<string>();
   const centralSlotId = getCentralSlotId(character);
   const levels = { ...player.slotLevels[character.id] };
   const fail = (message: string): EquipBuildResult => ({ ok: false, message });
@@ -70,12 +71,14 @@ export function equipBuild(player: PlayerState, character: Character, quartz: Qu
     if ((item.quartzLevel ?? 1) > level || (slot.restriction && getQuartzSeries(item) !== slot.restriction)) return fail('方案不符合当前槽位限制，请重新求解。');
     const name = item.name.trim().normalize('NFKC').toLocaleLowerCase('zh-CN') || item.id;
     const levelFamily = getQuartzLevelFamily(item);
-    if (names.has(name) || (item.family && families.has(item.family)) || (levelFamily && levelFamilies.has(levelFamily))) return fail('方案中的回路存在重复或互斥，请重新求解。');
+    const globalExclusion = getQuartzGlobalExclusionGroup(item);
+    if (names.has(name) || (item.family && families.has(item.family)) || (levelFamily && levelFamilies.has(levelFamily)) || (globalExclusion && globalExclusions.has(globalExclusion))) return fail('方案中的回路存在重复或互斥，请重新求解。');
     names.add(name);
     if (item.family) families.add(item.family);
     if (levelFamily) levelFamilies.add(levelFamily);
+    if (globalExclusion) globalExclusions.add(globalExclusion);
     const type = getQuartzLineType(item);
-    if (type && slot.id !== centralSlotId) {
+    if (type && !(type === 'reason' && slot.id === centralSlotId)) {
       for (let index = 0; index < character.lines.length; index += 1) {
         if (!character.lines[index].slots.includes(slot.id)) continue;
         if (lineTypes[index].has(type)) return fail('方案超过刃、盾、理系的线路装备限制，请重新求解。');

@@ -169,7 +169,7 @@ test('equip rejects outdated quartz, slot restrictions, duplicate names and line
   assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 9: 'water', 13: 'wind' })).ok, false);
   game.quartz[0].name = '毒之刃'; game.quartz[1].name = '冻结之刃';
   assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 13: 'water', 42: 'wind' })).ok, false);
-  assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 9: 'water', 13: 'wind' })).ok, true, 'central quota is independent');
+  assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 9: 'water', 13: 'wind' })).ok, false, 'center consumes its incident line quota');
 });
 
 test('equip rejects different levels of one family atomically, including stale candidates and the center', () => {
@@ -191,4 +191,56 @@ test('equip allows one level per family and permits other characters to use anot
   const both = equip(alice, game, 'bob', build({ 9: 'wind' }));
   assert.equal(both.equipment.alice[9], 'water');
   assert.equal(both.equipment.bob[9], 'wind');
+});
+
+for (const names of [['毒之刃', '冻结之刃'], ['黄玉之盾', '苍玉之盾']]) {
+  test(`equip rejects a stale central ${names[0]} plus branch ${names[1]} without mutations`, () => {
+    const { game, player } = fixture();
+    const character = game.characters[0];
+    character.lines = [{ id: 'L1', name: 'L1', slots: [9, 13] }, { id: 'L2', name: 'L2', slots: [9, 42] }];
+    game.quartz[0].name = names[0]; game.quartz[1].name = names[1];
+    const before = JSON.stringify(player);
+    for (const branch of [13, 42]) {
+      const result = equipBuild(player, character, game.quartz, build({ 9: 'water', [branch]: 'wind' }));
+      assert.equal(result.ok, false);
+      assert.equal(JSON.stringify(player), before);
+    }
+  });
+}
+
+test('equip permits different blades on separate branches and a central blade with a shield', () => {
+  const { game, player } = fixture();
+  const character = game.characters[0];
+  character.lines = [{ id: 'L1', name: 'L1', slots: [9, 13] }, { id: 'L2', name: 'L2', slots: [9, 42] }];
+  game.quartz[0].name = '毒之刃'; game.quartz[1].name = '冻结之刃';
+  assert.equal(equipBuild(player, character, game.quartz, build({ 13: 'water', 42: 'wind' })).ok, true);
+  game.quartz[1].name = '黄玉之盾';
+  assert.equal(equipBuild(player, character, game.quartz, build({ 9: 'water', 13: 'wind' })).ok, true);
+});
+
+test('equip rejects cross-line scent conflicts from stale plans atomically', () => {
+  const { game, player } = fixture();
+  const character = game.characters[0];
+  character.lines = [{ id: 'L1', name: 'L1', slots: [9, 13] }, { id: 'L2', name: 'L2', slots: [9, 42] }];
+  game.quartz[0].name = ' 異香 '; game.quartz[1].name = '陽炎';
+  const before = JSON.stringify(player);
+  const result = equipBuild(player, character, game.quartz, build({ 13: 'water', 42: 'wind' }, { 9: 2, 13: 1, 42: 1 }));
+  assert.equal(result.ok, false);
+  assert.equal(JSON.stringify(player), before, 'rejected loadout must not upgrade slots or reserve inventory');
+});
+
+test('scent exclusions apply per character, not across teammates', () => {
+  const { game, player } = fixture();
+  game.quartz[0].name = '异香'; game.quartz[1].name = '阳炎';
+  const alice = equip(player, game, 'alice', build({ 9: 'water' }));
+  const both = equip(alice, game, 'bob', build({ 9: 'wind' }));
+  assert.equal(both.equipment.alice[9], 'water');
+  assert.equal(both.equipment.bob[9], 'wind');
+});
+
+test('equip retains the existing independent central quota for reason quartz only', () => {
+  const { game, player } = fixture();
+  game.quartz[0].name = '毒之理'; game.quartz[1].name = '冻结之理';
+  assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 9: 'water', 13: 'wind' })).ok, true);
+  assert.equal(equipBuild(player, game.characters[0], game.quartz, build({ 13: 'water', 42: 'wind' })).ok, false);
 });

@@ -199,11 +199,11 @@ test('different lines may equip the same type regardless of candidate input orde
   }
 });
 
-test('the center has an independent quota while its elements still contribute to every line', async () => {
+test('the center contributes elements to every incident line without exempting its blade quota', async () => {
   const character = request().character;
   character.centralSlotId = 0;
   character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }, { id: 'L2', name: 'L2', slots: [0, 2] }];
-  const quartz = [q('毒之刃', { water: 2 }), q('冻结之刃', { fire: 2 }), q('石化之刃', { wind: 2 })];
+  const quartz = [q('毒之刃', { water: 2 }), q('fire', { fire: 2 }), q('wind', { wind: 2 })];
   const arts = [art('water-fire', { water: 2, fire: 2 }), art('water-wind', { water: 2, wind: 2 })];
   const result = (await solveOrbment(request({ character, quartz, arts })));
   assert.equal(result.status, 'solved');
@@ -216,23 +216,20 @@ test('the center has an independent quota while its elements still contribute to
   }
 });
 
-test('one line cannot use a third blade even with a separate center quota', async () => {
+test('one line cannot use multiple blades even when one slot is the center', async () => {
   const character = request().character;
   character.centralSlotId = 0;
   const result = (await solveOrbment(request({ character, quartz: [q('毒之刃', { water: 2 }), q('冻结之刃', { water: 2 }), q('石化之刃', { water: 2 })], arts: [art('water', { water: 6 })] })));
   assert.equal(result.status, 'no_solution');
 });
 
-test('a nonzero center ID works even when branch slots are searched before it', async () => {
+test('a nonzero center ID does not exempt blades on its incident lines', async () => {
   const character = request().character;
   character.slots = character.slots.map((slot, index) => ({ ...slot, id: [42, 9, 13][index], restriction: ([null, 'fire', 'wind'] as const)[index] }));
   character.centralSlotId = 42;
   character.lines = [{ id: 'L1', name: 'L1', slots: [42, 9] }, { id: 'L2', name: 'L2', slots: [42, 13] }];
   const result = (await solveOrbment(request({ character, quartz: [q('毒之刃', { water: 2 }), q('冻结之刃', { fire: 2 }), q('石化之刃', { wind: 2 })], arts: [art('water-fire', { water: 2, fire: 2 }), art('water-wind', { water: 2, wind: 2 })] })));
-  assert.equal(result.status, 'solved');
-  assert.equal(result.builds[0].assignments[42], '毒之刃');
-  assert.equal(result.builds[0].assignments[9], '冻结之刃');
-  assert.equal(result.builds[0].assignments[13], '石化之刃');
+  assert.equal(result.status, 'no_solution');
 });
 
 test('a noncentral shared slot consumes the type quota on every line that references it', async () => {
@@ -364,4 +361,81 @@ test('unknown required quartz and empty goals are reported as request errors', a
   const invalid = await solveOrbment(request({ mustQuartz: ['missing'] }));
   assert.equal(invalid.status, 'invalid_request'); assert.match(invalid.message, /不存在的必须回路/);
   assert.equal((await solveOrbment(request({ must: [], mustQuartz: [] }))).status, 'invalid_request');
+});
+
+for (const names of [['毒之刃', '冻结之刃'], ['黄玉之盾', '苍玉之盾']]) {
+  test(`central ${names[0]} consumes the quota on every incident line`, async () => {
+    const character = request().character;
+    character.centralSlotId = 0;
+    character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }, { id: 'L2', name: 'L2', slots: [0, 2] }];
+    character.slots[0].restriction = 'earth';
+    character.slots[1].restriction = 'water';
+    character.slots[2].restriction = 'water';
+    const quartz = [q(names[0], { earth: 3 }), q(names[1], { water: 2 })];
+    const result = await solveOrbment(request({ character, quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id) }));
+    assert.equal(result.status, 'no_solution');
+  });
+}
+
+test('different blades on disjoint branches remain legal with a shared ordinary center', async () => {
+  const character = request().character;
+  character.centralSlotId = 0;
+  character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }, { id: 'L2', name: 'L2', slots: [0, 2] }];
+  character.slots[0].restriction = 'earth';
+  character.slots[1].restriction = 'water';
+  character.slots[2].restriction = 'fire';
+  const quartz = [q('center', { earth: 3 }), q('毒之刃', { water: 2 }), q('冻结之刃', { fire: 2 })];
+  const result = await solveOrbment(request({ character, quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id) }));
+  assert.equal(result.status, 'solved');
+  assert.equal(result.builds[0].assignments[0], 'center');
+});
+
+test('a central blade and a shield on the same line have separate quotas', async () => {
+  const character = request().character;
+  character.centralSlotId = 0;
+  const quartz = [q('毒之刃', { earth: 3 }), q('黄玉之盾', { water: 2 })];
+  const result = await solveOrbment(request({ character, quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id) }));
+  assert.equal(result.status, 'solved');
+});
+
+for (const names of [['异香', '阳炎'], [' 異香 ', '陽炎']]) {
+  test(`${names.join(' and ')} are globally exclusive even on separate lines`, async () => {
+    const character = request().character;
+    character.centralSlotId = null;
+    character.lines = [{ id: 'L1', name: 'L1', slots: [0] }, { id: 'L2', name: 'L2', slots: [1] }];
+    const quartz = names.map((name, index) => ({ ...q(`scent-${index}`, { water: 2 }), name }));
+    for (const mode of ['owned_only', 'owned_plus_shop'] as const) {
+      const result = await solveOrbment(request({ character, quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id), mode,
+        owned: mode === 'owned_only' ? undefined : { 'scent-0': 0, 'scent-1': 0 }, shop: quartz.map(item => item.id) }));
+      assert.equal(result.status, 'no_solution');
+    }
+  });
+}
+
+test('either scent quartz can be equipped by itself', async () => {
+  for (const name of ['异香', '阳炎']) {
+    const result = await solveOrbment(request({ quartz: [q(name, { water: 3 })] }));
+    assert.equal(result.status, 'solved', name);
+  }
+});
+
+test('same-name unranked quartz remain forbidden across different lines', async () => {
+  const character = request().character;
+  character.lines = [{ id: 'L1', name: 'L1', slots: [0] }, { id: 'L2', name: 'L2', slots: [1] }];
+  const quartz = [{ ...q('ore-a', { earth: 2 }), name: '耀脉' }, { ...q('ore-b', { water: 2 }), name: ' 耀脉 ' }];
+  const result = await solveOrbment(request({ character, quartz, arts: [], must: [], mustQuartz: ['ore-a', 'ore-b'] }));
+  assert.equal(result.status, 'no_solution');
+});
+
+test('the retained reason rule keeps the existing central-slot exemption', async () => {
+  const character = request().character;
+  character.centralSlotId = 0;
+  character.lines = [{ id: 'L1', name: 'L1', slots: [0, 1] }, { id: 'L2', name: 'L2', slots: [0, 2] }];
+  character.slots[0].restriction = 'earth';
+  character.slots[1].restriction = 'water';
+  character.slots[2].restriction = 'fire';
+  const quartz = [q('毒之理', { earth: 3 }), q('冻结之理', { water: 2 }), q('炎伤之理', { fire: 2 })];
+  const result = await solveOrbment(request({ character, quartz, arts: [], must: [], mustQuartz: quartz.map(item => item.id) }));
+  assert.equal(result.status, 'solved');
+  assert.equal(result.builds[0].assignments[0], '毒之理');
 });
