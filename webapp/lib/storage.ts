@@ -1,6 +1,7 @@
 import { DEFAULT_GAME_DATA, createDefaultPlayerState } from './default-data.ts';
 import type { GameData, PlayerState } from './domain.ts';
 import { normalizeEquipment } from './equipment.ts';
+import { normalizeSolverPreferencesByCharacter } from './solver-preferences.ts';
 
 export const GAME_DATA_KEY = 'kiseki-orbment.game-data.v1';
 export const PLAYER_STATE_KEY = 'kiseki-orbment.player-state.v1';
@@ -23,7 +24,8 @@ export function loadGameData(): GameData {
 
 export function normalizePlayerState(gameData: GameData, stored: Partial<PlayerState>): PlayerState {
   const fallback = createDefaultPlayerState(gameData);
-  if (!stored.resources || !stored.slotLevels || !stored.lastSolver) return fallback;
+  if (!stored || !stored.resources || !stored.slotLevels || !stored.lastSolver) return fallback;
+  const legacyCharacterExists = gameData.characters.some(character => character.id === stored.lastSolver?.characterId);
   const resources = stored.resources;
   const slotLevels = stored.slotLevels;
   const lastSolver = { ...stored.lastSolver };
@@ -43,10 +45,14 @@ export function normalizePlayerState(gameData: GameData, stored: Partial<PlayerS
   lastSolver.timeoutSeconds = Number.isInteger(lastSolver.timeoutSeconds) && lastSolver.timeoutSeconds! >= 1 && lastSolver.timeoutSeconds! <= 120 ? lastSolver.timeoutSeconds : 10;
   lastSolver.mustHaveQuartz = [...new Set(Array.isArray(lastSolver.mustHaveQuartz) ? lastSolver.mustHaveQuartz : [])]
     .filter((id) => gameData.quartz.some((quartz) => quartz.id === id));
-  const validArts = lastSolver.mustHaveArts.filter((id) => gameData.arts.some((art) => art.id === id));
-  lastSolver.mustHaveArts = validArts.length || lastSolver.mustHaveArts.length === 0 ? validArts : fallback.lastSolver.mustHaveArts;
-  return { version: fallback.version, resources: normalizedResources, slotLevels: normalizedLevels,
-    equipment: normalizeEquipment(gameData, normalizedResources, stored.equipment ?? {}), lastSolver };
+  const savedArts = Array.isArray(lastSolver.mustHaveArts) ? lastSolver.mustHaveArts : fallback.lastSolver.mustHaveArts;
+  lastSolver.mustHaveArts = [...new Set(savedArts)].filter((id) => gameData.arts.some((art) => art.id === id));
+  if (!legacyCharacterExists) Object.assign(lastSolver, fallback.lastSolver);
+  const player: PlayerState = { version: fallback.version, resources: normalizedResources, slotLevels: normalizedLevels,
+    equipment: normalizeEquipment(gameData, normalizedResources, stored.equipment ?? {}), lastSolver,
+    solverByCharacter: stored.solverByCharacter ?? (legacyCharacterExists ? undefined : {}) };
+  player.solverByCharacter = normalizeSolverPreferencesByCharacter(gameData, player);
+  return player;
 }
 
 export function loadPlayerState(gameData: GameData): PlayerState {
@@ -61,15 +67,24 @@ export function loadPlayerState(gameData: GameData): PlayerState {
   }
 }
 
-export function saveGameData(gameData: GameData) {
-  window.localStorage.setItem(GAME_DATA_KEY, JSON.stringify(gameData));
+function writeStorage(key: string, value: unknown): boolean {
+  if (typeof window === 'undefined') return false;
+  try { window.localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
 }
 
-export function savePlayerState(playerState: PlayerState) {
-  window.localStorage.setItem(PLAYER_STATE_KEY, JSON.stringify(playerState));
+export function saveGameData(gameData: GameData): boolean {
+  return writeStorage(GAME_DATA_KEY, gameData);
 }
 
-export function resetLocalData() {
-  window.localStorage.removeItem(GAME_DATA_KEY);
-  window.localStorage.removeItem(PLAYER_STATE_KEY);
+export function savePlayerState(playerState: PlayerState): boolean {
+  return writeStorage(PLAYER_STATE_KEY, playerState);
+}
+
+export function resetLocalData(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    window.localStorage.removeItem(GAME_DATA_KEY);
+    window.localStorage.removeItem(PLAYER_STATE_KEY);
+    return true;
+  } catch { return false; }
 }

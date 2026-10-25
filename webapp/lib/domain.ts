@@ -65,6 +65,7 @@ export type PlayerState = {
   resources: Record<string, QuartzResource>;
   slotLevels: Record<string, Record<string, number>>;
   equipment: Record<string, Record<number, string | null>>;
+  solverByCharacter?: Record<string, CharacterSolverPreferences>;
   lastSolver: {
     characterId: string;
     resourceMode: ResourceMode;
@@ -78,6 +79,14 @@ export type PlayerState = {
 export type ResourceMode = 'available_only' | 'owned_only' | 'owned_plus_shop';
 export type RankingPreset = 'resource' | 'upgrades' | 'purchases' | 'extra_arts';
 export type SlotPolicy = { currentLevel: number; allowUpgrade: boolean; maxLevel: number };
+
+export type CharacterSolverPreferences = {
+  resourceMode: ResourceMode;
+  mustHaveArts: string[];
+  mustHaveQuartz: string[];
+  timeoutSeconds: number;
+  slotPolicies: Record<number, SlotPolicy>;
+};
 
 export type SolveRequest = {
   character: Character;

@@ -93,6 +93,74 @@ with tempfile.TemporaryDirectory(prefix="orbment-pages-") as directory:
             page.get_by_role("button", name=re.compile("开始求解")).click()
             expect(page.locator(".empty-result")).to_contain_text("没有合法方案", timeout=30_000)
             expect(page.locator(".build-card")).to_have_count(0)
+            # Solver choices belong to the character, not to the last visited panel.
+            # Exercise real controls and reload, keeping shared inventory untouched.
+            inventory_before = page.evaluate("""() => JSON.parse(localStorage.getItem(
+                'kiseki-orbment.player-state.v1')).resources""")
+            page.get_by_role("button", name="清空必须回路", exact=True).click()
+            page.get_by_role("button", name="清空必须魔法", exact=True).click()
+            page.get_by_role("button", name="石之锤", exact=True).click()
+            page.get_by_role("button", name="驱动2必须装备", exact=True).click()
+            page.get_by_role("button", name=re.compile("^只使用可用")).click()
+            page.get_by_label("尝试时间", exact=False).fill("17")
+            page.get_by_role("button", name="槽位2", exact=True).click()
+            page.get_by_role("switch", name="槽位2允许升级", exact=True).click()
+            page.locator(".slot-policy select").select_option("3")
+            page.get_by_role("combobox", name="选择角色").select_option("estelle")
+            expect(page.get_by_label("尝试时间", exact=False)).to_have_value("10")
+            expect(page.get_by_role("button", name="驱动2必须装备", exact=True)).to_have_attribute("aria-pressed", "false")
+            page.get_by_role("button", name="清空必须魔法", exact=True).click()
+            page.get_by_role("button", name="驱动3必须装备", exact=True).click()
+            page.get_by_role("button", name=re.compile(r"^已拥有 \+ 商店")).click()
+            page.get_by_label("尝试时间", exact=False).fill("23")
+            page.get_by_role("button", name="槽位2", exact=True).click()
+            expect(page.get_by_role("switch", name="槽位2允许升级", exact=True)).to_have_attribute("aria-checked", "false")
+            expect(page.locator(".slot-policy select")).to_have_value("1")
+
+            def assert_character_options(character_id):
+                expect(page.get_by_role("combobox", name="选择角色")).to_have_value(character_id)
+                page.get_by_role("button", name="槽位2", exact=True).click()
+                is_kloe = character_id == "kloe"
+                expect(page.get_by_label("尝试时间", exact=False)).to_have_value("17" if is_kloe else "23")
+                expect(page.get_by_role("button", name="石之锤", exact=True)).to_have_attribute("aria-pressed", str(is_kloe).lower())
+                expect(page.get_by_role("button", name="驱动2必须装备", exact=True)).to_have_attribute("aria-pressed", str(is_kloe).lower())
+                expect(page.get_by_role("button", name="驱动3必须装备", exact=True)).to_have_attribute("aria-pressed", str(not is_kloe).lower())
+                expect(page.get_by_role("switch", name="槽位2允许升级", exact=True)).to_have_attribute("aria-checked", str(is_kloe).lower())
+                expect(page.locator(".slot-policy select")).to_have_value("3" if is_kloe else "1")
+                expect(page.locator(".radio-row.selected")).to_contain_text("只使用可用" if is_kloe else "已拥有 + 商店")
+
+            # Change then switch immediately, without sleeping for a persistence debounce.
+            for character_id in ["kloe", "estelle", "kloe", "estelle"]:
+                page.get_by_role("combobox", name="选择角色").select_option(character_id)
+                assert_character_options(character_id)
+            page.reload()
+            page.wait_for_function("window.crossOriginIsolated", timeout=30_000)
+            assert_character_options("estelle")
+            page.get_by_role("combobox", name="选择角色").select_option("kloe")
+            assert_character_options("kloe")
+            page.reload()
+            page.wait_for_function("window.crossOriginIsolated", timeout=30_000)
+            assert_character_options("kloe")
+            saved_preferences = page.evaluate("""() => JSON.parse(localStorage.getItem(
+                'kiseki-orbment.player-state.v1'))""")
+            assert saved_preferences["resources"] == inventory_before
+            assert saved_preferences["solverByCharacter"]["kloe"]["timeoutSeconds"] == 17
+            assert saved_preferences["solverByCharacter"]["estelle"]["timeoutSeconds"] == 23
+            assert saved_preferences["solverByCharacter"]["estelle"]["mustHaveArts"] == []
+            assert saved_preferences["solverByCharacter"]["kloe"]["slotPolicies"]["1"]["allowUpgrade"] is True
+            assert saved_preferences["solverByCharacter"]["estelle"]["slotPolicies"]["1"]["allowUpgrade"] is False
+            # Leaving a running solve must cancel its generation: no old character's
+            # progress/result or equip action may appear under the next character.
+            page.get_by_role("button", name=re.compile("开始求解")).click()
+            page.get_by_role("combobox", name="选择角色").select_option("estelle")
+            assert_character_options("estelle")
+            expect(page.locator(".results-preview")).to_contain_text("准备就绪")
+            expect(page.locator(".solver-progress")).to_have_count(0)
+            expect(page.locator(".build-card")).to_have_count(0)
+            page.wait_for_timeout(1500)  # Allow a late Worker reply to expose a stale-result bug.
+            expect(page.locator(".results-preview")).to_contain_text("准备就绪")
+            expect(page.locator(".build-card")).to_have_count(0)
+
             # Exercise the compiled worker with a small persisted custom topology.
             # The earth-only center is shared; the water-only leaves are disjoint.
             empty = dict.fromkeys(["earth", "water", "fire", "wind", "time", "space", "mirage"], 0)
@@ -145,7 +213,7 @@ with tempfile.TemporaryDirectory(prefix="orbment-pages-") as directory:
             check_required_pair("异香", "阳炎", "water", False)
             assert not errors, errors
             assert not failures, failures
-            print("Pages browser check passed: subpath assets, first-visit isolation, Z3 solving, global exclusions, shared-center quotas, disjoint branches and saved state.")
+            print("Pages browser check passed: subpath assets, first-visit isolation, Z3 solving, global exclusions, shared-center quotas, disjoint branches, per-character saved choices, reload and in-flight character switching.")
             browser.close()
     finally:
         server.shutdown()

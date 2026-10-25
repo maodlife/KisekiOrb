@@ -32,6 +32,7 @@ export function createDefaultPlayerState(gameData: GameData = DEFAULT_GAME_DATA)
     equipment: Object.fromEntries(gameData.characters.map((character) => [
       character.id, Object.fromEntries(character.slots.map((slot) => [slot.id, null])),
     ])),
+    solverByCharacter: {},
     lastSolver: {
       characterId: gameData.characters[0]?.id ?? '',
       resourceMode: 'owned_only',
