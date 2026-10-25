@@ -8,6 +8,12 @@ const SUFFIX_TYPES: Record<string, QuartzLineType> = {
   理: 'reason',
 };
 
+// Global name-based exclusions also apply to legacy data without explicit families.
+export function getQuartzGlobalExclusionGroup(quartz: Pick<Quartz, 'name'>): string | null {
+  const name = quartz.name.trim().normalize('NFKC');
+  return ['异香', '異香', '阳炎', '陽炎'].includes(name) ? 'scent' : null;
+}
+
 // Names carry the series rank, which is independent of the slot's required level.
 // Infer at use time so legacy local data and imported backups obey the same rule.
 export function getQuartzLevelFamily(quartz: Pick<Quartz, 'name'>): string | null {

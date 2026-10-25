@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_GAME_DATA } from '../lib/default-data.ts';
-import { getCentralSlotId, getQuartzLevelFamily, getQuartzLineType } from '../lib/quartz-rules.ts';
+import { getCentralSlotId, getQuartzGlobalExclusionGroup, getQuartzLevelFamily, getQuartzLineType } from '../lib/quartz-rules.ts';
 import { createCharacterTemplate } from '../lib/character-template.ts';
 
 test('recognizes blade, shield and reason types from quartz names', () => {
@@ -62,4 +62,13 @@ test('a shared slot alone does not imply a center', () => {
   const created = createCharacterTemplate({ id: 'test', name: 'Test', lineCount: 2, currentLevel: 1, maxGameLevel: 3 });
   const relocated = { ...created, centralSlotId: undefined, slots: created.slots.map((slot) => ({ ...slot, x: 10, y: 10 })) };
   assert.equal(getCentralSlotId(relocated), null);
+});
+
+test('recognizes the global scent exclusion for legacy and traditional names only', () => {
+  for (const name of ['异香', ' 異香 ', '阳炎', '陽炎']) {
+    assert.equal(getQuartzGlobalExclusionGroup({ name }), 'scent', name);
+  }
+  for (const name of ['异香2', '阳炎效果', '耀脉', '毒之刃', '']) {
+    assert.equal(getQuartzGlobalExclusionGroup({ name }), null, name);
+  }
 });
