@@ -24,6 +24,7 @@ import { getQuartzGroup, groupQuartzForInventory, QUARTZ_GROUPS, type QuartzGrou
 import { getCentralSlotId } from '@/lib/quartz-rules.ts';
 import { useOrbmentSolver } from '@/hooks/use-orbment-solver.ts';
 
+import { getCharacterSolverPreferences, updateCharacterSolverPreferences } from '@/lib/solver-preferences.ts';
 import { loadGameData, loadPlayerState, normalizePlayerState, resetLocalData, saveGameData, savePlayerState } from '@/lib/storage.ts';
 
 type View = 'solver' | 'inventory' | 'characters' | 'data' | 'guide';
@@ -116,6 +117,7 @@ export default function Home() {
   const { result: solveResult, progress: solveProgress, busy: solving, cancelling, elapsedMs: solveElapsed, run, cancel, reset: resetSolver } = useOrbmentSolver();
   const [expandedBuild, setExpandedBuild] = useState(0);
   const [notice, setNotice] = useState('');
+  const [storageAvailable, setStorageAvailable] = useState(true);
 
 
   useEffect(() => {
@@ -124,10 +126,10 @@ export default function Home() {
     const savedCharacter = loadedGame.characters.find((item) => item.id === loadedPlayer.lastSolver.characterId) ?? loadedGame.characters[0];
     // oxlint-disable-next-line react/react-compiler -- one-time hydration from localStorage
     setGameData(loadedGame); setPlayer(loadedPlayer); setCharacterId(savedCharacter.id);
-    setResourceMode(loadedPlayer.lastSolver.resourceMode); setTimeoutSeconds(String(loadedPlayer.lastSolver.timeoutSeconds ?? 10));
-    setMustHave(loadedPlayer.lastSolver.mustHaveArts.filter((id) => loadedGame.arts.some((art) => art.id === id)));
-    setMustHaveQuartz(loadedPlayer.lastSolver.mustHaveQuartz ?? []);
-    setPolicies(makePolicies(savedCharacter, loadedPlayer)); setActiveSlot(savedCharacter.slots[0]?.id ?? 0); setHydrated(true);
+    const preferences = getCharacterSolverPreferences(loadedGame, loadedPlayer, savedCharacter.id);
+    setResourceMode(preferences.resourceMode); setTimeoutSeconds(String(preferences.timeoutSeconds));
+    setMustHave(preferences.mustHaveArts); setMustHaveQuartz(preferences.mustHaveQuartz);
+    setPolicies(preferences.slotPolicies); setActiveSlot(savedCharacter.slots[0]?.id ?? 0); setHydrated(true);
   }, []);
 
   useEffect(() => { resetSolver(); }, [characterId, resourceMode, mustHave, mustHaveQuartz, policies, gameData, player.resources, player.equipment, resetSolver]);
@@ -139,13 +141,21 @@ export default function Home() {
       return valid.length === current.length ? current : valid;
     });
   }, [gameData.quartz, hydrated]);
-  useEffect(() => { if (hydrated) saveGameData(gameData); }, [gameData, hydrated]);
-  useEffect(() => { if (hydrated) savePlayerState(player); }, [player, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    const gameSaved = saveGameData(gameData);
+    const playerSaved = savePlayerState(player);
+    // oxlint-disable-next-line react/react-compiler -- reflect the external browser storage write result
+    setStorageAvailable(gameSaved && playerSaved);
+  }, [gameData, player, hydrated]);
   useEffect(() => {
     if (!hydrated) return;
     // oxlint-disable-next-line react/react-compiler -- persist the latest solver preferences in player state
-    setPlayer((current) => ({ ...current, lastSolver: { characterId, resourceMode, mustHaveArts: mustHave, mustHaveQuartz, rankingPreset: 'extra_arts', timeoutSeconds: Number(timeoutSeconds) || 10 } }));
-  }, [characterId, resourceMode, mustHave, mustHaveQuartz, timeoutSeconds, hydrated]);
+    setPlayer((current) => updateCharacterSolverPreferences(gameData, current, characterId, {
+      resourceMode, mustHaveArts: mustHave, mustHaveQuartz,
+      timeoutSeconds: Number(timeoutSeconds), slotPolicies: policies,
+    }));
+  }, [characterId, resourceMode, mustHave, mustHaveQuartz, timeoutSeconds, policies, gameData, hydrated]);
 
   const character = gameData.characters.find((item) => item.id === characterId) ?? gameData.characters[0];
   const quartzNames = useMemo(() => Object.fromEntries(gameData.quartz.map((quartz) => [quartz.id, quartz.name])), [gameData.quartz]);
@@ -153,10 +163,26 @@ export default function Home() {
   const activePolicy = policies[activeSlot];
   const teammateCounts = useMemo(() => getEquippedCounts(player.equipment, character.id), [player.equipment, character.id]);
 
+  const restorePreferences = (data: GameData, state: PlayerState, next: Character) => {
+    const preferences = getCharacterSolverPreferences(data, state, next.id);
+    setCharacterId(next.id);
+    setResourceMode(preferences.resourceMode); setTimeoutSeconds(String(preferences.timeoutSeconds));
+    setMustHave(preferences.mustHaveArts); setMustHaveQuartz(preferences.mustHaveQuartz);
+    setPolicies(preferences.slotPolicies); setActiveSlot(next.slots[0]?.id ?? 0);
+    resetSolver(); setExpandedBuild(0);
+  };
+
   const switchCharacter = (id: string) => {
     const next = gameData.characters.find((item) => item.id === id);
-    if (!next) return;
-    setCharacterId(id); setPolicies(makePolicies(next, player)); setActiveSlot(next.slots[0]?.id ?? 0); resetSolver();
+    if (!next || id === characterId) return;
+    // Snapshot the outgoing controls before restoring another character. No effect
+    // may combine the new character ID with the previous character's preferences.
+    const saved = updateCharacterSolverPreferences(gameData, player, characterId, {
+      resourceMode, mustHaveArts: mustHave, mustHaveQuartz,
+      timeoutSeconds: Number(timeoutSeconds), slotPolicies: policies,
+    });
+    setPlayer(saved);
+    restorePreferences(gameData, saved, next);
   };
 
   const patchPolicy = (slotId: number, patch: Partial<SlotPolicy>) => setPolicies((current) => ({ ...current, [slotId]: { ...current[slotId], ...patch } }));
@@ -181,7 +207,10 @@ export default function Home() {
   const applyBuild = (build: Build) => {
     const outcome = equipBuild(player, character, gameData.quartz, build);
     if (!outcome.ok) { setNotice(outcome.message); return; }
-    setPlayer(outcome.player); setPolicies(makePolicies(character, outcome.player)); resetSolver();
+    const updated = updateCharacterSolverPreferences(gameData, outcome.player, character.id, {
+      resourceMode, mustHaveArts: mustHave, mustHaveQuartz, timeoutSeconds: Number(timeoutSeconds), slotPolicies: policies,
+    });
+    setPlayer(updated); setPolicies(getCharacterSolverPreferences(gameData, updated, character.id).slotPolicies); resetSolver();
     setNotice(`已为「${character.name}」装备方案${build.metrics.upgradeSteps > 0 ? '，并更新槽位等级' : ''}。`);
   };
 
@@ -191,18 +220,28 @@ export default function Home() {
   };
 
   const updateSlotLevel = (slotId: number, level: number) => {
-    setPlayer((current) => ({ ...current, slotLevels: { ...current.slotLevels, [character.id]: { ...current.slotLevels[character.id], [String(slotId)]: level } } }));
-    setPolicies((current) => ({ ...current, [slotId]: { ...current[slotId], currentLevel: level, maxLevel: Math.max(level, current[slotId]?.maxLevel ?? level) } }));
+    const leveled = { ...player, slotLevels: { ...player.slotLevels, [character.id]: { ...player.slotLevels[character.id], [String(slotId)]: level } } };
+    const updated = updateCharacterSolverPreferences(gameData, leveled, character.id, { slotPolicies: policies });
+    setPlayer(updated); setPolicies(getCharacterSolverPreferences(gameData, updated, character.id).slotPolicies);
   };
 
-  const patchCharacter = (updated: Character) => setGameData((current) => ({ ...current, characters: current.characters.map((item) => item.id === updated.id ? updated : item) }));
+  const patchCharacter = (updated: Character) => {
+    const nextGame = { ...gameData, characters: gameData.characters.map((item) => item.id === updated.id ? updated : item) };
+    setGameData(nextGame);
+    if (updated.id === characterId) {
+      const nextPlayer = updateCharacterSolverPreferences(nextGame, player, characterId, { slotPolicies: policies });
+      setPlayer(nextPlayer);
+      setPolicies(getCharacterSolverPreferences(nextGame, nextPlayer, characterId).slotPolicies);
+      if (!updated.slots.some((slot) => slot.id === activeSlot)) setActiveSlot(updated.slots[0]?.id ?? 0);
+    }
+  };
 
   const addCharacter = (newCharacter: Character) => {
     const levels = Object.fromEntries(newCharacter.slots.map((slot) => [String(slot.id), slot.currentLevel]));
-    setGameData((current) => ({ ...current, characters: [...current.characters, newCharacter] }));
-    setPlayer((current) => ({ ...current, slotLevels: { ...current.slotLevels, [newCharacter.id]: levels }, equipment: { ...current.equipment, [newCharacter.id]: Object.fromEntries(newCharacter.slots.map((slot) => [slot.id, null])) } }));
-    setCharacterId(newCharacter.id); setPolicies(makePolicies(newCharacter, { ...player, slotLevels: { ...player.slotLevels, [newCharacter.id]: levels } }));
-    setActiveSlot(newCharacter.slots[0].id); resetSolver(); setNotice(`已创建角色「${newCharacter.name}」，可以继续编辑槽位与线路。`);
+    const nextGame = { ...gameData, characters: [...gameData.characters, newCharacter] };
+    const nextPlayer = { ...player, slotLevels: { ...player.slotLevels, [newCharacter.id]: levels }, equipment: { ...player.equipment, [newCharacter.id]: Object.fromEntries(newCharacter.slots.map((slot) => [slot.id, null])) } };
+    setGameData(nextGame); setPlayer(nextPlayer); restorePreferences(nextGame, nextPlayer, newCharacter);
+    setNotice(`已创建角色「${newCharacter.name}」，可以继续编辑槽位与线路。`);
   };
 
   const exportAll = () => {
@@ -218,17 +257,17 @@ export default function Home() {
       const importedPlayer = normalizePlayerState(parsed.gameData, parsed.playerState);
       setGameData(parsed.gameData); setPlayer(importedPlayer);
       const nextCharacter = parsed.gameData.characters.find((item) => item.id === importedPlayer.lastSolver.characterId) ?? parsed.gameData.characters[0];
-      setCharacterId(nextCharacter.id); setPolicies(makePolicies(nextCharacter, importedPlayer)); setMustHave(importedPlayer.lastSolver.mustHaveArts);
-      setMustHaveQuartz(importedPlayer.lastSolver.mustHaveQuartz ?? []);
-      setResourceMode(importedPlayer.lastSolver.resourceMode); setTimeoutSeconds(String(importedPlayer.lastSolver.timeoutSeconds ?? 10)); setActiveSlot(nextCharacter.slots[0]?.id ?? 0); resetSolver(); setNotice('导入成功，库存与装备记录已自动保存。');
+      restorePreferences(parsed.gameData, importedPlayer, nextCharacter);
+      setNotice('导入成功，库存、装备与各角色求解选项已自动保存。');
     } catch { setNotice('导入失败：文件不是有效的 Orbment 备份。'); }
     event.target.value = '';
   };
 
   const resetAll = () => {
-    setTimeoutSeconds('10'); resetLocalData(); const freshGame = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)) as GameData; const freshPlayer = createDefaultPlayerState(freshGame);
-    setGameData(freshGame); setPlayer(freshPlayer); setCharacterId(freshGame.characters[0].id); setPolicies(makePolicies(freshGame.characters[0], freshPlayer)); setMustHave(freshPlayer.lastSolver.mustHaveArts); resetSolver(); setNotice('已恢复内置截图数据。');
-    setMustHaveQuartz(freshPlayer.lastSolver.mustHaveQuartz ?? []);
+    resetLocalData(); const freshGame = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)) as GameData;
+    const freshPlayer = createDefaultPlayerState(freshGame);
+    setGameData(freshGame); setPlayer(freshPlayer); restorePreferences(freshGame, freshPlayer, freshGame.characters[0]);
+    setNotice('已恢复内置截图数据。');
   };
 
   return <main className="app-shell">
@@ -247,7 +286,7 @@ export default function Home() {
     <section className="workspace">
       <header className="topbar">
         <div><p className="eyebrow">{VIEW_META[view].eyebrow}</p><h1>{VIEW_META[view].title}</h1></div>
-        <div className="top-actions"><span className="save-state"><ShieldCheck size={14} />{hydrated ? '已自动保存' : '正在读取'}</span>{view !== 'data' && <button className="ghost-button" onClick={() => setView('data')}><Settings2 size={16} />数据设置</button>}</div>
+        <div className="top-actions"><span className="save-state"><ShieldCheck size={14} />{!hydrated ? '正在读取' : storageAvailable ? '已自动保存' : '无法保存到浏览器'}</span>{view !== 'data' && <button className="ghost-button" onClick={() => setView('data')}><Settings2 size={16} />数据设置</button>}</div>
       </header>
 
       {view === 'solver' && <>

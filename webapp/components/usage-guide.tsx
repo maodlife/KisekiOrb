@@ -70,7 +70,7 @@ export function UsageGuide({ onNavigate }: { onNavigate: (destination: Destinati
         <li>内置角色已有导力器线路和属性限制。需要修正或新增角色时，可以编辑最高等级、属性限制、中央插槽和线路成员；同一个物理槽可以被多条线路引用。</li>
         <li>返回「求解器」并选择同一角色。点击导力器图中的槽位，可以单独开启「允许升级」并设置最高等级；未开启时，只使用当前等级。</li>
       </ol>
-      <div className="guide-note"><Users size={18} /><p><b>当前等级和允许升级是两件事。</b>当前等级记录实际状态；允许升级让求解器规划升级方案。每次切换角色或重新载入页面后，请重新确认各槽位的升级策略。</p></div>
+      <div className="guide-note"><Users size={18} /><p><b>当前等级和允许升级是两件事。</b>当前等级记录实际状态；允许升级让求解器规划升级方案。各角色的升级策略与其他求解选项会分别自动保存，切换角色或重新载入页面后恢复；库存与商店仍共享。</p></div>
       <GuideFigure file="character.png" alt="角色导力器页面，展示角色选择、线路图和每个槽位的当前等级、最高等级与属性限制" caption="先确认角色的实际槽位等级，再到求解器中设置是否允许升级。" />
     </section>
 
@@ -109,7 +109,7 @@ export function UsageGuide({ onNavigate }: { onNavigate: (destination: Destinati
       <div className="guide-section-heading"><span className="guide-number">05</span><div><p className="step">备份与迁移</p><h2>导出与导入数据</h2></div><button className="guide-action secondary" onClick={() => onNavigate('data')}>打开游戏数据<ArrowRight size={15} /></button></div>
       <ol className="guide-instructions">
         <li>打开「游戏数据」，点击「导出 JSON」，保存下载的 <code>kiseki-orbment-backup.json</code>。</li>
-        <li>备份包含游戏数据库、库存与商店、角色槽位等级、装备记录，以及角色、回路来源、必须回路、必须魔法和尝试时间等求解偏好。候选结果与临时允许升级策略不会导出。</li>
+        <li>备份包含游戏数据库、库存与商店、角色槽位等级、装备记录，以及各角色的回路来源、必须回路、必须魔法、尝试时间和槽位升级策略。候选结果不会导出。</li>
         <li>在另一设备、浏览器或站点打开「游戏数据」，点击「导入 JSON」，选择之前导出的备份。导入成功后会替换当前数据并自动保存；建议先导出当前数据再导入。</li>
       </ol>
       <div className="guide-note"><Database size={18} /><p><b>自动保存只针对当前浏览器、当前站点。</b>无需账号，也不会在设备间自动同步。清理浏览器数据、使用无痕窗口或切换域名，都可能需要重新导入备份。「恢复截图数据」会重置本地数据库和玩家状态，使用前请先导出。</p></div>
